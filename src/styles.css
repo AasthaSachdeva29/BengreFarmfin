@@ -104,7 +104,3 @@
 .shadow-warm {
   box-shadow: 0 10px 30px -10px color-mix(in oklab, var(--primary) 25%, transparent);
 }
-.bg-gradient-primary:active {
-  background: linear-gradient(135deg, var(--primary), oklch(0.62 0.2 50));
-  opacity: 0.85;
-}
