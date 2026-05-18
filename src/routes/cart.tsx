@@ -337,7 +337,7 @@ Thank you for ordering fresh from Bengre Farm!`;
                   <button onClick={() => setPaymentMethod("gpay")} className={`flex-1 py-3 text-sm font-bold rounded ${paymentMethod === "gpay" ? "bg-white shadow-sm text-primary" : "text-muted-foreground"}`}>UPI / Online</button>
                 </div>
                 
-                <Button onClick={handlePlace} disabled={!validation.ok} className="w-full h-14 text-lg bg-gradient-primary hover:opacity-90 font-bold shadow-lg">
+                <Button onClick={handlePlace} disabled={!validation.ok} className="w-full h-14 text-lg bg-gradient-primary hover:opacity-90 active:opacity-80 active:scale-[0.99] font-bold shadow-lg transition-all">
                   Place Order · ₹{grandTotal}
                 </Button>
                 {!validation.ok && items.length > 0 && (
