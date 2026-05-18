@@ -117,9 +117,10 @@ function CartPage() {
         name: "Bengre Farm",
         description: "Fresh Dairy Delivery",
         order_id: orderId,
-        handler: function (response: any) {
-          const r = placeOrder(currentUser.id, items, paymentMethod, deliveryType, fullAddress, selectedAreaId);
-          if (!r.ok) return toast.error(r.error);
+        // ✅ FIX 1: handler marked async so we can await placeOrder
+        handler: async function (response: any) {
+          const r = await placeOrder(currentUser.id, items, paymentMethod, deliveryType, fullAddress, selectedAreaId);
+          if (!r.ok) return toast.error(r.error || "Failed to place order");
           setPlacedOrder(r.order);
           toast.success(`Order #${r.order!.orderNo} placed successfully! 🎉`);
         },
@@ -136,8 +137,9 @@ function CartPage() {
       const rzp = new window.Razorpay(options);
       rzp.open();
     } else {
-      const r = placeOrder(currentUser.id, items, paymentMethod, deliveryType, fullAddress, selectedAreaId);
-      if (!r.ok) return toast.error(r.error);
+      // ✅ FIX 2: await placeOrder for COD
+      const r = await placeOrder(currentUser.id, items, paymentMethod, deliveryType, fullAddress, selectedAreaId);
+      if (!r.ok) return toast.error(r.error || "Failed to place order");
       setPlacedOrder(r.order);
       toast.success(`Order #${r.order!.orderNo} placed! 🎉`);
     }
