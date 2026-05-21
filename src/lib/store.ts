@@ -35,6 +35,7 @@ export type OrderStatus = "pending" | "out_for_delivery" | "delivered" | "cancel
 export type PaymentMethod = "gpay" | "cod";
 export type DeliveryType = "daily_route" | "personal";
 
+export const ORDER_START_TIME = "06:00";
 export const ROUTE_CUTOFF_TIME = "11:15";
 export const PERSONAL_MIN_ORDER = 180;
 export const PERSONAL_DELIVERY_CHARGE = 50;
@@ -126,6 +127,23 @@ const mutate = (fn: (s: Store) => void) => {
   notify();
 };
 
+// Helper: check if current time is within the allowed order window (6:00 AM – 11:15 AM)
+const isWithinOrderWindow = (): { allowed: boolean; error?: string } => {
+  const now = new Date();
+
+  const start = new Date();
+  const [sh, sm] = ORDER_START_TIME.split(":").map(Number);
+  start.setHours(sh, sm, 0, 0);
+
+  const cutoff = new Date();
+  const [ch, cm] = ROUTE_CUTOFF_TIME.split(":").map(Number);
+  cutoff.setHours(ch, cm, 0, 0);
+
+  if (now < start) return { allowed: false, error: "Orders open at 6:00 AM. Please come back then!" };
+  if (now > cutoff) return { allowed: false, error: "Orders are closed after 11:15 AM. Please try again tomorrow." };
+  return { allowed: true };
+};
+
 export function useStore() {
   const [snap, setSnap] = useState<Store>(_store);
 
@@ -133,7 +151,7 @@ export function useStore() {
     setSnap(_store);
     const l = () => setSnap({ ..._store });
     listeners.add(l);
-    
+
     // Fetch initial data from backend
     const fetchData = async () => {
       try {
@@ -151,20 +169,15 @@ export function useStore() {
         console.error("Failed to fetch store data", err);
       }
     };
-    
+
     fetchData();
 
     return () => { listeners.delete(l); };
   }, []);
 
-  // In a real app we'd fetch users from backend, but since login returns the user
-  // we can just mock the currentUser object using an API call if needed, 
-  // or rely on login to set it. For simplicity, we just use the ID.
-  // Wait, if users array is empty, we need currentUser data. 
-  // Let's assume login returns the user and we push it to `s.users`.
-  const currentUser = snap.users.find((u) => u.id === snap.currentUserId) || 
-                      (snap.currentUserId === 'admin' ? { id: 'admin', name: 'Admin', role: 'admin', email: 'admin@bengre.farm', password: '', address: '', phone: '' } : null) ||
-                      (snap.currentUserId === 'delivery' ? { id: 'delivery', name: 'Delivery Boy', role: 'delivery', email: '', password: '', address: '', phone: '' } : null);
+  const currentUser = snap.users.find((u) => u.id === snap.currentUserId) ||
+    (snap.currentUserId === 'admin' ? { id: 'admin', name: 'Admin', role: 'admin', email: 'admin@bengre.farm', password: '', address: '', phone: '' } : null) ||
+    (snap.currentUserId === 'delivery' ? { id: 'delivery', name: 'Delivery Boy', role: 'delivery', email: '', password: '', address: '', phone: '' } : null);
 
   return {
     state: snap,
@@ -219,6 +232,10 @@ export function useStore() {
     clearCart: () => mutate((s) => { s.cart = {}; }),
 
     placeOrder: async (userId: string, items: OrderItem[], paymentMethod: PaymentMethod, deliveryType: DeliveryType, fullAddress: string, areaId?: string) => {
+      // Check order time window for all order types
+      const timeCheck = isWithinOrderWindow();
+      if (!timeCheck.allowed) return { ok: false as const, error: timeCheck.error! };
+
       let userName = "User";
       let phone = "";
       const u = _store.users.find(x => x.id === userId);
@@ -231,11 +248,6 @@ export function useStore() {
         if (total < PERSONAL_MIN_ORDER) return { ok: false as const, error: `Minimum order for Personal Delivery is ₹${PERSONAL_MIN_ORDER}` };
         deliveryCharge = PERSONAL_DELIVERY_CHARGE;
       } else {
-        const now = new Date();
-        const cutoff = new Date();
-        const [hh, mm] = ROUTE_CUTOFF_TIME.split(":").map(Number);
-        cutoff.setHours(hh, mm, 0, 0);
-        if (now > cutoff) return { ok: false as const, error: "Daily Route orders are closed after 11:15 AM. Please choose Personal Delivery." };
         if (!areaId) return { ok: false as const, error: "Please select your sector for Daily Route delivery" };
       }
 
@@ -259,7 +271,7 @@ export function useStore() {
         });
         const data = await res.json();
         if (!data.ok) return { ok: false as const, error: data.error };
-        
+
         mutate(s => {
           s.orders.push(data.order);
           s.cart = {};
