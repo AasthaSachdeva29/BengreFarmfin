@@ -6,18 +6,39 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Toaster } from "@/components/ui/sonner";
-import { Plus, Minus, ShoppingCart, Package, Download } from "lucide-react";
+import { Plus, Minus, ShoppingCart, Package, Download, Clock, AlertCircle } from "lucide-react";
 
 export const Route = createFileRoute("/shop")({
   component: ShopPage,
   head: () => ({ meta: [{ title: "Shop — Bengre Farm" }] }),
 });
 
+// Order window: 6:00 AM to 11:15 AM
+const ROUTE_START_MINUTES = 6 * 60;       // 360
+const ROUTE_END_MINUTES = 11 * 60 + 15;   // 675
+
+function getRouteOrderStatus(): "before" | "open" | "closed" {
+  const now = new Date();
+  const total = now.getHours() * 60 + now.getMinutes();
+  if (total < ROUTE_START_MINUTES) return "before";
+  if (total < ROUTE_END_MINUTES) return "open";
+  return "closed";
+}
+
 function ShopPage() {
   const { currentUser, state, setCartQty } = useStore();
   const navigate = useNavigate();
   const cart = state.cart || {};
   const [activeTab, setActiveTab] = useState<"menu" | "orders">("menu");
+  const [routeStatus, setRouteStatus] = useState(getRouteOrderStatus);
+
+  // Re-check order status every minute
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setRouteStatus(getRouteOrderStatus());
+    }, 60_000);
+    return () => clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -93,6 +114,36 @@ Thank you for ordering fresh from Bengre Farm!`;
             </Link>
           )}
         </div>
+
+        {/* Order timing banner — only shown on menu tab */}
+        {activeTab === "menu" && (
+          <>
+            {routeStatus === "open" && (
+              <div className="mb-4 flex items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+                <Clock className="h-4 w-4 shrink-0" />
+                <span>
+                  <strong>Daily Route orders open</strong> — accepting until <strong>11:15 AM</strong>. Place your order now!
+                </span>
+              </div>
+            )}
+            {routeStatus === "before" && (
+              <div className="mb-4 flex items-center gap-3 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700">
+                <Clock className="h-4 w-4 shrink-0" />
+                <span>
+                  <strong>Daily Route orders open at 6:00 AM.</strong> You can browse the menu and add items to cart now.
+                </span>
+              </div>
+            )}
+            {routeStatus === "closed" && (
+              <div className="mb-4 flex items-center gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                <AlertCircle className="h-4 w-4 shrink-0" />
+                <span>
+                  <strong>Daily Route orders closed</strong> for today (after 11:15 AM). You can still place a <strong>Personal Delivery</strong> order anytime.
+                </span>
+              </div>
+            )}
+          </>
+        )}
 
         <div className="flex gap-2 mb-6 border-b pb-3">
           <Button variant={activeTab === "menu" ? "default" : "ghost"} size="sm" onClick={() => setActiveTab("menu")}
