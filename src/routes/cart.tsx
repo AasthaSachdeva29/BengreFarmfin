@@ -70,12 +70,14 @@ function CartPage() {
     if (deliveryType === "daily_route") {
       if (!selectedAreaId) return { ok: false, msg: "Select sector/area" };
       if (!fullAddress.trim()) return { ok: false, msg: "Enter full address" };
-      
-      const [hh, mm] = ROUTE_CUTOFF_TIME.split(":").map(Number);
+
       const now = new Date();
-      const cutoff = new Date();
-      cutoff.setHours(hh, mm, 0, 0);
-      if (now > cutoff) return { ok: false, msg: "Daily Route closed (after 11:15 AM). Use Personal Delivery." };
+      const totalMinutes = now.getHours() * 60 + now.getMinutes();
+      const startMinutes = 6 * 60;        // 6:00 AM = 360 mins
+      const endMinutes = 11 * 60 + 15;    // 11:15 AM = 675 mins
+
+      if (totalMinutes < startMinutes) return { ok: false, msg: "Daily Route opens at 6:00 AM. Please come back later." };
+      if (totalMinutes >= endMinutes) return { ok: false, msg: "Daily Route closed (after 11:15 AM). Use Personal Delivery." };
     } else {
       if (subtotal < PERSONAL_MIN_ORDER) return { ok: false, msg: `Min order ₹${PERSONAL_MIN_ORDER} for Personal` };
       if (!fullAddress.trim()) return { ok: false, msg: "Enter delivery address" };
@@ -117,7 +119,6 @@ function CartPage() {
         name: "Bengre Farm",
         description: "Fresh Dairy Delivery",
         order_id: orderId,
-        // ✅ FIX 1: handler marked async so we can await placeOrder
         handler: async function (response: any) {
           const r = await placeOrder(currentUser.id, items, paymentMethod, deliveryType, fullAddress, selectedAreaId);
           if (!r.ok) return toast.error(r.error || "Failed to place order");
@@ -137,7 +138,6 @@ function CartPage() {
       const rzp = new window.Razorpay(options);
       rzp.open();
     } else {
-      // ✅ FIX 2: await placeOrder for COD
       const r = await placeOrder(currentUser.id, items, paymentMethod, deliveryType, fullAddress, selectedAreaId);
       if (!r.ok) return toast.error(r.error || "Failed to place order");
       setPlacedOrder(r.order);
@@ -291,7 +291,7 @@ Thank you for ordering fresh from Bengre Farm!`;
                       <p className="text-[10px] text-muted-foreground">
                         ✓ No delivery charge <br />
                         ✓ No minimum order <br />
-                        ✓ <strong>Accepting until 11:15 AM</strong>
+                        ✓ <strong>Accepting orders 6:00 AM – 11:15 AM</strong>
                       </p>
                     </div>
                     <div className="space-y-2">
