@@ -13,15 +13,25 @@ export const Route = createFileRoute("/shop")({
   head: () => ({ meta: [{ title: "Shop — Bengre Farm" }] }),
 });
 
-// Order window: 6:00 AM to 11:15 AM
-const ROUTE_START_MINUTES = 6 * 60;       // 360
-const ROUTE_END_MINUTES = 15 * 60 + 15;   // 675
+// Formats "HH:MM" 24hr → "6:00 AM" / "11:15 AM" etc.
+const fmt12 = (t: string) => {
+  const [h, m] = t.split(":").map(Number);
+  const ampm = h >= 12 ? "PM" : "AM";
+  return `${h % 12 || 12}:${String(m).padStart(2, "0")} ${ampm}`;
+};
 
-function getRouteOrderStatus(): "before" | "open" | "closed" {
+// Now reads times dynamically from settings instead of hardcoded constants
+function getRouteOrderStatus(settings: { orderStartTime: string; routeCutoffTime: string }): "before" | "open" | "closed" {
   const now = new Date();
   const total = now.getHours() * 60 + now.getMinutes();
-  if (total < ROUTE_START_MINUTES) return "before";
-  if (total < ROUTE_END_MINUTES) return "open";
+
+  const [sh, sm] = settings.orderStartTime.split(":").map(Number);
+  const [ch, cm] = settings.routeCutoffTime.split(":").map(Number);
+  const start = sh * 60 + sm;
+  const end = ch * 60 + cm;
+
+  if (total < start) return "before";
+  if (total < end) return "open";
   return "closed";
 }
 
@@ -30,15 +40,16 @@ function ShopPage() {
   const navigate = useNavigate();
   const cart = state.cart || {};
   const [activeTab, setActiveTab] = useState<"menu" | "orders">("menu");
-  const [routeStatus, setRouteStatus] = useState(getRouteOrderStatus);
+  const [routeStatus, setRouteStatus] = useState(() => getRouteOrderStatus(state.settings));
 
-  // Re-check order status every minute
+  // Re-check order status every minute using live settings
   useEffect(() => {
+    setRouteStatus(getRouteOrderStatus(state.settings));
     const interval = setInterval(() => {
-      setRouteStatus(getRouteOrderStatus());
+      setRouteStatus(getRouteOrderStatus(state.settings));
     }, 60_000);
     return () => clearInterval(interval);
-  }, []);
+  }, [state.settings]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -60,7 +71,7 @@ function ShopPage() {
     if (m) acc.push({ menuId: id, name: m.name, price: m.price, qty });
     return acc;
   }, [] as OrderItem[]);
-  
+
   const subtotal = items.reduce((s, i) => s + i.price * i.qty, 0);
   const cartCount = Object.values(cart).reduce((s, q) => s + q, 0);
 
@@ -122,7 +133,7 @@ Thank you for ordering fresh from Bengre Farm!`;
               <div className="mb-4 flex items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
                 <Clock className="h-4 w-4 shrink-0" />
                 <span>
-                  <strong>Daily Route orders open</strong> — accepting until <strong>11:15 AM</strong>. Place your order now!
+                  <strong>Daily Route orders open</strong> — accepting until <strong>{fmt12(state.settings.routeCutoffTime)}</strong>. Place your order now!
                 </span>
               </div>
             )}
@@ -130,7 +141,7 @@ Thank you for ordering fresh from Bengre Farm!`;
               <div className="mb-4 flex items-center gap-3 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700">
                 <Clock className="h-4 w-4 shrink-0" />
                 <span>
-                  <strong>Daily Route orders open at 6:00 AM.</strong> You can browse the menu and add items to cart now.
+                  <strong>Daily Route orders open at {fmt12(state.settings.orderStartTime)}.</strong> You can browse the menu and add items to cart now.
                 </span>
               </div>
             )}
@@ -138,7 +149,7 @@ Thank you for ordering fresh from Bengre Farm!`;
               <div className="mb-4 flex items-center gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
                 <AlertCircle className="h-4 w-4 shrink-0" />
                 <span>
-                  <strong>Daily Route orders closed</strong> for today (after 11:15 AM). You can still place a <strong>Personal Delivery</strong> order anytime.
+                  <strong>Daily Route orders closed</strong> for today (after {fmt12(state.settings.routeCutoffTime)}). You can still place a <strong>Personal Delivery</strong> order anytime.
                 </span>
               </div>
             )}
@@ -174,9 +185,9 @@ Thank you for ordering fresh from Bengre Farm!`;
                       } ${!isAvailable ? "opacity-40 pointer-events-none" : ""}`}>
                       <div className="flex items-center gap-3">
                         {m.imageUrl && (
-                           <div className="h-16 w-16 bg-white rounded-md overflow-hidden shrink-0 border shadow-sm">
-                             <img src={m.imageUrl} alt={m.name} className="h-full w-full object-contain" />
-                           </div>
+                          <div className="h-16 w-16 bg-white rounded-md overflow-hidden shrink-0 border shadow-sm">
+                            <img src={m.imageUrl} alt={m.name} className="h-full w-full object-contain" />
+                          </div>
                         )}
                         <div className="flex-1">
                           <div className="text-sm font-semibold">{m.name}</div>
@@ -242,9 +253,9 @@ Thank you for ordering fresh from Bengre Farm!`;
                           <span className="bg-muted px-2 py-0.5 rounded-full">{o.address}</span>
                         </div>
                         <div className="flex justify-end pt-2">
-                           <Button variant="outline" size="sm" className="h-8 text-xs text-primary border-primary" onClick={() => handleDownloadReceipt(o)}>
-                             <Download className="h-3 w-3 mr-1" /> Download Receipt
-                           </Button>
+                          <Button variant="outline" size="sm" className="h-8 text-xs text-primary border-primary" onClick={() => handleDownloadReceipt(o)}>
+                            <Download className="h-3 w-3 mr-1" /> Download Receipt
+                          </Button>
                         </div>
                       </div>
                     ))}
