@@ -15,7 +15,7 @@ export const Route = createFileRoute("/shop")({
 
 // Order window: 6:00 AM to 11:15 AM
 const ROUTE_START_MINUTES = 6 * 60;       // 360
-const ROUTE_END_MINUTES = 11 * 60 + 15;   // 675
+const ROUTE_END_MINUTES = 15 * 60 + 15;   // 675
 
 function getRouteOrderStatus(): "before" | "open" | "closed" {
   const now = new Date();
