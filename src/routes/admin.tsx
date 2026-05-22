@@ -63,30 +63,69 @@ function downloadOrdersCSV(orders: any[], filename: string) {
 }
 
 // 🔔 Play a pleasant notification chime using Web Audio API
+// FIX: Resume AudioContext first to handle browser autoplay policy
 function playOrderChime() {
   try {
     const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
 
-    const notes = [523.25, 659.25, 783.99, 1046.5]; // C5 E5 G5 C6 — a bright "ding-dong" chord
-    notes.forEach((freq, i) => {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.type = "sine";
-      osc.frequency.value = freq;
+    // ✅ Resume context if browser suspended it due to autoplay policy
+    const playNotes = () => {
+      const notes = [523.25, 659.25, 783.99, 1046.5]; // C5 E5 G5 C6 — bright "ding-dong"
+      notes.forEach((freq, i) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.type = "sine";
+        osc.frequency.value = freq;
 
-      const startAt = ctx.currentTime + i * 0.18;
-      gain.gain.setValueAtTime(0, startAt);
-      gain.gain.linearRampToValueAtTime(0.3, startAt + 0.05);
-      gain.gain.exponentialRampToValueAtTime(0.001, startAt + 0.8);
+        const startAt = ctx.currentTime + i * 0.18;
+        gain.gain.setValueAtTime(0, startAt);
+        gain.gain.linearRampToValueAtTime(0.3, startAt + 0.05);
+        gain.gain.exponentialRampToValueAtTime(0.001, startAt + 0.8);
 
-      osc.start(startAt);
-      osc.stop(startAt + 0.8);
-    });
+        osc.start(startAt);
+        osc.stop(startAt + 0.8);
+      });
+    };
+
+    if (ctx.state === "suspended") {
+      ctx.resume().then(playNotes);
+    } else {
+      playNotes();
+    }
   } catch (e) {
     console.warn("Audio playback failed", e);
   }
+}
+
+// 🔔 Request browser notification permission
+function requestNotificationPermission() {
+  if ("Notification" in window && Notification.permission === "default") {
+    Notification.requestPermission().then((permission) => {
+      if (permission === "granted") {
+        toast.success("🔔 Browser notifications enabled!");
+      } else if (permission === "denied") {
+        toast.error("Browser notifications blocked. You can enable them in browser settings.");
+      }
+    });
+  }
+}
+
+// 🔔 Show browser push notification (works even when tab is in background)
+function showBrowserNotification(count: number, orderNos: number[]) {
+  if (!("Notification" in window) || Notification.permission !== "granted") return;
+
+  const orderList = orderNos.slice(0, 3).map(n => `#${n}`).join(", ");
+  const extra = orderNos.length > 3 ? ` +${orderNos.length - 3} more` : "";
+
+  new Notification("🛒 New Order — Bengre Farm", {
+    body: `${count} new order${count > 1 ? "s" : ""} received! (${orderList}${extra})`,
+    icon: "/favicon.ico",
+    badge: "/favicon.ico",
+    tag: "new-order", // replaces previous notification instead of stacking
+    requireInteraction: true, // stays until admin clicks it
+  });
 }
 
 function AdminPage() {
@@ -98,6 +137,9 @@ function AdminPage() {
 
   // 🔔 Notification state
   const [soundEnabled, setSoundEnabled] = useState(true);
+  const [notifPermission, setNotifPermission] = useState<NotificationPermission>(
+    "Notification" in window ? Notification.permission : "denied"
+  );
   const knownOrderIdsRef = useRef<Set<string>>(new Set());
   const isFirstLoadRef = useRef(true);
 
@@ -105,7 +147,16 @@ function AdminPage() {
     if (currentUser && currentUser.role !== "admin") navigate({ to: "/" });
   }, [currentUser, navigate]);
 
-  // 🔔 Watch for new orders and play chime
+  // 🔔 Request browser notification permission when admin logs in
+  useEffect(() => {
+    if (!currentUser || currentUser.role !== "admin") return;
+    if ("Notification" in window && Notification.permission === "default") {
+      requestNotificationPermission();
+      setNotifPermission(Notification.permission);
+    }
+  }, [currentUser]);
+
+  // 🔔 Watch for new orders — play chime + show browser notification
   useEffect(() => {
     if (!currentUser || currentUser.role !== "admin") return;
 
@@ -120,20 +171,28 @@ function AdminPage() {
     }
 
     // Check for any order IDs we haven't seen before
-    let newCount = 0;
+    const newOrderNos: number[] = [];
     todayOrders.forEach(o => {
       const key = `${o.dateKey}-${o.orderNo}`;
       if (!knownOrderIdsRef.current.has(key)) {
         knownOrderIdsRef.current.add(key);
-        newCount++;
+        newOrderNos.push(o.orderNo);
       }
     });
 
-    if (newCount > 0 && soundEnabled) {
-      playOrderChime();
-      toast.success(`🛒 ${newCount} new order${newCount > 1 ? "s" : ""} received!`, {
-        duration: 5000,
+    if (newOrderNos.length > 0) {
+      // ✅ Play chime if sound is enabled
+      if (soundEnabled) {
+        playOrderChime();
+      }
+
+      // ✅ Show in-app toast
+      toast.success(`🛒 ${newOrderNos.length} new order${newOrderNos.length > 1 ? "s" : ""} received! (${newOrderNos.map(n => `#${n}`).join(", ")})`, {
+        duration: 6000,
       });
+
+      // ✅ Show browser push notification (works in background tab)
+      showBrowserNotification(newOrderNos.length, newOrderNos);
     }
   }, [state.orders, soundEnabled, currentUser]);
 
@@ -159,32 +218,113 @@ function AdminPage() {
     toast.success("Item added");
   };
 
+  // 🔔 Handle notification permission toggle
+  const handleNotifToggle = () => {
+    if (!("Notification" in window)) {
+      toast.error("Your browser doesn't support notifications.");
+      return;
+    }
+    if (Notification.permission === "denied") {
+      toast.error("Notifications are blocked. Please enable them in your browser settings (click the lock icon in the address bar).");
+      return;
+    }
+    if (Notification.permission === "default") {
+      requestNotificationPermission();
+      setTimeout(() => setNotifPermission(Notification.permission), 1000);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gradient-warm">
       <Header />
       <Toaster richColors />
       <main className="container mx-auto px-4 py-6 space-y-6">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between flex-wrap gap-3">
           <div>
             <h1 className="font-display text-3xl font-bold">Admin Dashboard</h1>
             <p className="text-sm text-muted-foreground">Today: {today}</p>
           </div>
-          {/* 🔔 Sound toggle */}
-          <button
-            onClick={() => {
-              setSoundEnabled(v => !v);
-              toast(soundEnabled ? "🔕 Order sound muted" : "🔔 Order sound enabled");
-            }}
-            className={`flex items-center gap-2 px-3 py-2 rounded-xl border-2 text-sm font-medium transition-all ${
-              soundEnabled
-                ? "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
-                : "border-muted bg-muted/50 text-muted-foreground hover:bg-muted"
-            }`}
-          >
-            {soundEnabled ? <Bell className="h-4 w-4" /> : <BellOff className="h-4 w-4" />}
-            {soundEnabled ? "Sound On" : "Sound Off"}
-          </button>
+
+          {/* 🔔 Notification controls */}
+          <div className="flex items-center gap-2 flex-wrap">
+
+            {/* Browser notification permission button */}
+            {"Notification" in window && (
+              <button
+                onClick={handleNotifToggle}
+                title={
+                  notifPermission === "granted"
+                    ? "Browser notifications enabled"
+                    : notifPermission === "denied"
+                    ? "Browser notifications blocked — enable in browser settings"
+                    : "Click to enable browser notifications"
+                }
+                className={`flex items-center gap-2 px-3 py-2 rounded-xl border-2 text-sm font-medium transition-all ${
+                  notifPermission === "granted"
+                    ? "border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100"
+                    : notifPermission === "denied"
+                    ? "border-red-200 bg-red-50 text-red-600 cursor-not-allowed"
+                    : "border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100"
+                }`}
+              >
+                {notifPermission === "granted" ? (
+                  <>
+                    <Bell className="h-4 w-4" />
+                    <span className="hidden sm:inline">Notif. On</span>
+                  </>
+                ) : notifPermission === "denied" ? (
+                  <>
+                    <BellOff className="h-4 w-4" />
+                    <span className="hidden sm:inline">Notif. Blocked</span>
+                  </>
+                ) : (
+                  <>
+                    <Bell className="h-4 w-4 animate-bounce" />
+                    <span className="hidden sm:inline">Enable Notifs</span>
+                  </>
+                )}
+              </button>
+            )}
+
+            {/* Sound toggle */}
+            <button
+              onClick={() => {
+                setSoundEnabled(v => !v);
+                toast(soundEnabled ? "🔕 Order sound muted" : "🔔 Order sound enabled");
+              }}
+              className={`flex items-center gap-2 px-3 py-2 rounded-xl border-2 text-sm font-medium transition-all ${
+                soundEnabled
+                  ? "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                  : "border-muted bg-muted/50 text-muted-foreground hover:bg-muted"
+              }`}
+            >
+              {soundEnabled ? <Bell className="h-4 w-4" /> : <BellOff className="h-4 w-4" />}
+              {soundEnabled ? "Sound On" : "Sound Off"}
+            </button>
+          </div>
         </div>
+
+        {/* Browser notification permission banner */}
+        {"Notification" in window && notifPermission === "default" && (
+          <div className="flex items-center justify-between gap-3 rounded-xl border-2 border-amber-200 bg-amber-50 px-4 py-3">
+            <div className="flex items-center gap-2 text-amber-800">
+              <Bell className="h-4 w-4 shrink-0 animate-bounce" />
+              <p className="text-sm font-medium">
+                Enable browser notifications to get alerts even when this tab is in the background.
+              </p>
+            </div>
+            <Button
+              size="sm"
+              className="shrink-0 bg-amber-600 hover:bg-amber-700 text-white"
+              onClick={() => {
+                requestNotificationPermission();
+                setTimeout(() => setNotifPermission(Notification.permission), 1000);
+              }}
+            >
+              Enable
+            </Button>
+          </div>
+        )}
 
         {/* Analytics Cards */}
         <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
