@@ -76,7 +76,6 @@ interface Store {
   areas: DeliveryArea[];
   cart: Record<string, number>;
   settings: StoreSettings;
-  hydrated: boolean; // true once initial fetch is done — prevents premature redirect on refresh
 }
 
 const todayKey = () => {
@@ -86,32 +85,37 @@ const todayKey = () => {
 
 const LOCAL_KEY = "bengre_store_v4";
 
-const loadLocal = () => {
-  if (typeof window === "undefined") return { cart: {}, currentUserId: null };
+// Load persisted data from localStorage — includes full user object now
+const loadLocal = (): { cart: Record<string, number>; currentUserId: string | null; currentUser: User | null } => {
+  if (typeof window === "undefined") return { cart: {}, currentUserId: null, currentUser: null };
   try {
     const raw = localStorage.getItem(LOCAL_KEY);
-    if (!raw) return { cart: {}, currentUserId: null };
+    if (!raw) return { cart: {}, currentUserId: null, currentUser: null };
     const parsed = JSON.parse(raw);
     return {
       cart: parsed.cart || {},
-      currentUserId: parsed.currentUserId || null
+      currentUserId: parsed.currentUserId || null,
+      currentUser: parsed.currentUser || null,
     };
   } catch {
-    return { cart: {}, currentUserId: null };
+    return { cart: {}, currentUserId: null, currentUser: null };
   }
 };
 
 const initialLocal = loadLocal();
 
+// If we have a saved user, pre-populate the users array immediately
+// so currentUser is non-null on first render — no flicker, no redirect
+const initialUsers: User[] = initialLocal.currentUser ? [initialLocal.currentUser] : [];
+
 let _store: Store = {
-  users: [],
+  users: initialUsers,
   currentUserId: initialLocal.currentUserId,
   menu: [],
   orders: [],
   areas: [],
   cart: initialLocal.cart,
   settings: { orderStartTime: "06:00", routeCutoffTime: "11:15" },
-  hydrated: false,
 };
 
 const listeners = new Set<() => void>();
@@ -119,9 +123,12 @@ const notify = () => listeners.forEach((l) => l());
 
 const persistLocal = () => {
   if (typeof window !== "undefined") {
+    // Save the full current user object so it survives refresh
+    const currentUser = _store.users.find(u => u.id === _store.currentUserId) || null;
     localStorage.setItem(LOCAL_KEY, JSON.stringify({
       cart: _store.cart,
-      currentUserId: _store.currentUserId
+      currentUserId: _store.currentUserId,
+      currentUser,
     }));
   }
 };
@@ -178,12 +185,9 @@ export function useStore() {
           if (areaRes.ok) s.areas = areaRes.areas;
           if (orderRes.ok) s.orders = orderRes.orders;
           if (settingsRes.ok) s.settings = settingsRes.settings;
-          s.hydrated = true; // mark done so redirect guard can fire
         });
       } catch (err) {
         console.error("Failed to fetch store data", err);
-        // Even on error, mark hydrated so the page doesn't hang forever
-        mutate(s => { s.hydrated = true; });
       }
     };
 
@@ -211,7 +215,9 @@ export function useStore() {
         const u: User = data.user;
         mutate((s) => {
           s.currentUserId = u.id;
-          if (!s.users.find(x => x.id === u.id)) s.users.push(u);
+          // Update or insert user — also persists full user to localStorage
+          const idx = s.users.findIndex(x => x.id === u.id);
+          if (idx >= 0) s.users[idx] = u; else s.users.push(u);
         });
         return { ok: true as const, user: u };
       } catch {
@@ -239,7 +245,10 @@ export function useStore() {
       }
     },
 
-    logout: () => mutate((s) => { s.currentUserId = null; }),
+    logout: () => mutate((s) => {
+      s.currentUserId = null;
+      s.users = []; // clear saved user so localStorage is clean
+    }),
 
     setCartQty: (id: string, q: number) => mutate((s) => {
       if (q <= 0) delete s.cart[id]; else s.cart[id] = q;
