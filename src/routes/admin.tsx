@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { Header } from "@/components/Header";
-import { useStore, type StoreSettings } from "@/lib/store";
+import { useStore, type AppSettings } from "@/lib/store";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,12 +10,57 @@ import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { Toaster } from "@/components/ui/sonner";
-import { Trash2, Package, TrendingUp, Clock, CheckCircle, XCircle, AlertCircle, IndianRupee } from "lucide-react";
+import { Trash2, Package, TrendingUp, Clock, CheckCircle, XCircle, AlertCircle, IndianRupee, Download } from "lucide-react";
 
 export const Route = createFileRoute("/admin")({
   component: AdminPage,
   head: () => ({ meta: [{ title: "Admin — Bengre Farm" }] }),
 });
+
+// ✅ CSV download helper
+function downloadOrdersCSV(orders: any[], filename: string) {
+  if (orders.length === 0) {
+    toast.error("No orders to download.");
+    return;
+  }
+
+  const headers = [
+    "Order No", "Date", "Customer Name", "Phone", "Address",
+    "Delivery Type", "Delivery Area", "Payment Method",
+    "Items", "Subtotal (₹)", "Delivery Charge (₹)", "Grand Total (₹)", "Status"
+  ];
+
+  const rows = orders.map(o => [
+    o.orderNo,
+    o.dateKey,
+    o.userName,
+    o.phone,
+    `"${(o.address || "").replace(/"/g, '""')}"`,
+    o.deliveryType.replace("_", " "),
+    o.deliveryAreaName || "—",
+    o.paymentMethod.toUpperCase(),
+    `"${o.items.map((i: any) => `${i.name} x${i.qty}`).join(", ")}"`,
+    o.total,
+    o.deliveryCharge,
+    o.grandTotal ?? o.total,
+    o.status.replace("_", " ")
+  ]);
+
+  const csvContent = [headers, ...rows]
+    .map(row => row.join(","))
+    .join("\n");
+
+  const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  toast.success(`Downloaded ${filename}`);
+}
 
 function AdminPage() {
   const { currentUser, state, addMenuItem, updateMenuItem, removeMenuItem, setOrderStatus, todayKey, addArea, removeArea, updateSettings } = useStore();
@@ -36,7 +81,6 @@ function AdminPage() {
   const todayOrders = state.orders.filter((o) => o.dateKey === today).sort((a, b) => a.orderNo - b.orderNo);
   const allOrders = state.orders.slice().reverse();
 
-  // Analytics
   const pendingOrders = todayOrders.filter((o) => o.status === "pending");
   const outForDelivery = todayOrders.filter((o) => o.status === "out_for_delivery");
   const deliveredOrders = todayOrders.filter((o) => o.status === "delivered");
@@ -63,41 +107,11 @@ function AdminPage() {
 
         {/* Analytics Cards */}
         <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-          <AnalyticCard
-            icon={<Package className="h-5 w-5" />}
-            label="Total Orders"
-            value={todayOrders.length}
-            color="text-primary"
-            bg="bg-primary/10"
-          />
-          <AnalyticCard
-            icon={<Clock className="h-5 w-5" />}
-            label="Pending"
-            value={pendingOrders.length + outForDelivery.length}
-            color="text-amber-600"
-            bg="bg-amber-50"
-          />
-          <AnalyticCard
-            icon={<CheckCircle className="h-5 w-5" />}
-            label="Delivered"
-            value={deliveredOrders.length}
-            color="text-emerald-600"
-            bg="bg-emerald-50"
-          />
-          <AnalyticCard
-            icon={<IndianRupee className="h-5 w-5" />}
-            label="Revenue"
-            value={`₹${todayRevenue}`}
-            color="text-primary"
-            bg="bg-primary/10"
-          />
-          <AnalyticCard
-            icon={<TrendingUp className="h-5 w-5" />}
-            label="Pending Rev."
-            value={`₹${pendingRevenue}`}
-            color="text-amber-600"
-            bg="bg-amber-50"
-          />
+          <AnalyticCard icon={<Package className="h-5 w-5" />}     label="Total Orders"  value={todayOrders.length}                          color="text-primary"    bg="bg-primary/10" />
+          <AnalyticCard icon={<Clock className="h-5 w-5" />}       label="Pending"       value={pendingOrders.length + outForDelivery.length} color="text-amber-600"  bg="bg-amber-50" />
+          <AnalyticCard icon={<CheckCircle className="h-5 w-5" />} label="Delivered"     value={deliveredOrders.length}                      color="text-emerald-600" bg="bg-emerald-50" />
+          <AnalyticCard icon={<IndianRupee className="h-5 w-5" />} label="Revenue"       value={`₹${todayRevenue}`}                          color="text-primary"    bg="bg-primary/10" />
+          <AnalyticCard icon={<TrendingUp className="h-5 w-5" />}  label="Pending Rev."  value={`₹${pendingRevenue}`}                        color="text-amber-600"  bg="bg-amber-50" />
         </div>
 
         {/* Admin Nav */}
@@ -110,15 +124,7 @@ function AdminPage() {
               onClick={() => setActiveSection(s)}
               className={activeSection === s ? "bg-gradient-primary" : ""}
             >
-              {s === "orders"
-                ? "Today's Orders"
-                : s === "menu"
-                ? "Manage Menu"
-                : s === "areas"
-                ? "Route Areas"
-                : s === "timings"
-                ? "Order Timings"
-                : "All History"}
+              {s === "orders" ? "Today's Orders" : s === "menu" ? "Manage Menu" : s === "areas" ? "Route Areas" : s === "timings" ? "Order Timings" : "All History"}
             </Button>
           ))}
         </div>
@@ -126,7 +132,18 @@ function AdminPage() {
         {/* Orders Section */}
         {activeSection === "orders" && (
           <div className="space-y-4">
-            {/* Pending & Out for Delivery */}
+            {/* ✅ CSV download for today's orders */}
+            <div className="flex justify-end">
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-2 border-primary/30 text-primary hover:bg-primary/5"
+                onClick={() => downloadOrdersCSV(todayOrders, `BengreFarm_Orders_${today}.csv`)}
+              >
+                <Download className="h-4 w-4" /> Download Today's Orders (CSV)
+              </Button>
+            </div>
+
             <Card>
               <CardHeader>
                 <CardTitle className="font-display flex items-center gap-2">
@@ -156,7 +173,6 @@ function AdminPage() {
               </CardContent>
             </Card>
 
-            {/* Delivered Today */}
             <Card>
               <CardHeader>
                 <CardTitle className="font-display flex items-center gap-2">
@@ -173,7 +189,7 @@ function AdminPage() {
                     <div>
                       <div className="font-semibold text-sm">#{o.orderNo} · {o.userName}</div>
                       <div className="text-[10px] bg-muted px-2 py-0.5 rounded capitalize">{o.deliveryType.replace("_", " ")}</div>
-                      <div className="text-xs text-muted-foreground">{o.items.map(i => `${i.name}×${i.qty}`).join(", ")}</div>
+                      <div className="text-xs text-muted-foreground">{o.items.map((i: any) => `${i.name}×${i.qty}`).join(", ")}</div>
                     </div>
                     <div className="text-right">
                       <div className="font-bold">₹{o.grandTotal || o.total}</div>
@@ -184,7 +200,6 @@ function AdminPage() {
               </CardContent>
             </Card>
 
-            {/* Cancelled */}
             {cancelledOrders.length > 0 && (
               <Card>
                 <CardHeader>
@@ -198,7 +213,7 @@ function AdminPage() {
                     <div key={o.orderNo} className="flex justify-between items-center border rounded-xl p-3 opacity-50">
                       <div>
                         <div className="font-semibold text-sm">#{o.orderNo} · {o.userName}</div>
-                        <div className="text-xs text-muted-foreground">{o.items.map(i => `${i.name}×${i.qty}`).join(", ")}</div>
+                        <div className="text-xs text-muted-foreground">{o.items.map((i: any) => `${i.name}×${i.qty}`).join(", ")}</div>
                       </div>
                       <div className="text-right">
                         <div className="font-bold line-through">₹{o.total}</div>
@@ -233,12 +248,7 @@ function AdminPage() {
                   <div className="flex items-center gap-3">
                     <div className="flex flex-col items-center">
                       <Label className="text-[10px] mb-1">Stock Count</Label>
-                      <Input
-                        type="number"
-                        value={m.count ?? 0}
-                        onChange={(e) => updateMenuItem(m.id, { count: Number(e.target.value) })}
-                        className="w-20 h-8 text-center"
-                      />
+                      <Input type="number" value={m.count ?? 0} onChange={(e) => updateMenuItem(m.id, { count: Number(e.target.value) })} className="w-20 h-8 text-center" />
                     </div>
                     <div className="flex flex-col items-center">
                       <Label className="text-[10px] mb-1">Status</Label>
@@ -309,9 +319,20 @@ function AdminPage() {
         {/* All History */}
         {activeSection === "history" && (
           <Card>
-            <CardHeader>
-              <CardTitle className="font-display">All Orders History</CardTitle>
-              <CardDescription>{allOrders.length} total orders</CardDescription>
+            <CardHeader className="flex flex-row items-start justify-between gap-4">
+              <div>
+                <CardTitle className="font-display">All Orders History</CardTitle>
+                <CardDescription>{allOrders.length} total orders</CardDescription>
+              </div>
+              {/* ✅ CSV download for ALL orders */}
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-2 border-primary/30 text-primary hover:bg-primary/5 shrink-0"
+                onClick={() => downloadOrdersCSV(allOrders, `BengreFarm_AllOrders.csv`)}
+              >
+                <Download className="h-4 w-4" /> Download All (CSV)
+              </Button>
             </CardHeader>
             <CardContent className="max-h-[600px] overflow-auto space-y-2">
               {allOrders.length === 0 && <p className="text-sm text-muted-foreground text-center py-6">No orders yet.</p>}
@@ -361,7 +382,6 @@ function OrderCard({ order: o, onStatus }: { order: any; onStatus: (dateKey: str
           </div>
         </div>
       </div>
-
       <div className="rounded-lg bg-muted p-3 text-sm">
         <div className="font-medium text-xs text-muted-foreground mb-1">ORDER ITEMS</div>
         {o.items.map((i: any) => (
@@ -416,13 +436,12 @@ function TimingsSection({
   settings,
   onSave,
 }: {
-  settings: StoreSettings;
-  onSave: (s: StoreSettings) => Promise<void>;
+  settings: AppSettings;
+  onSave: (s: AppSettings) => Promise<void>;
 }) {
   const [start, setStart] = useState("");
   const [cutoff, setCutoff] = useState("");
 
-  // Sync when settings load from API (they start as defaults until fetch completes)
   useEffect(() => {
     if (settings.orderStartTime) setStart(settings.orderStartTime);
     if (settings.routeCutoffTime) setCutoff(settings.routeCutoffTime);
@@ -455,9 +474,7 @@ function TimingsSection({
             onChange={(e) => setStart(e.target.value)}
             className="flex h-11 w-full rounded-md border border-input bg-background px-3 py-2 text-base ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           />
-          {start && (
-            <p className="text-xs text-muted-foreground">Orders will open at <strong>{fmt12(start)}</strong></p>
-          )}
+          {start && <p className="text-xs text-muted-foreground">Orders will open at <strong>{fmt12(start)}</strong></p>}
         </div>
 
         <div className="space-y-2">
@@ -469,12 +486,9 @@ function TimingsSection({
             onChange={(e) => setCutoff(e.target.value)}
             className="flex h-11 w-full rounded-md border border-input bg-background px-3 py-2 text-base ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           />
-          {cutoff && (
-            <p className="text-xs text-muted-foreground">Orders will close at <strong>{fmt12(cutoff)}</strong></p>
-          )}
+          {cutoff && <p className="text-xs text-muted-foreground">Orders will close at <strong>{fmt12(cutoff)}</strong></p>}
         </div>
 
-        {/* Live preview */}
         <div className="rounded-xl border-2 border-primary/10 bg-primary/5 p-4 space-y-1">
           <p className="text-xs font-bold text-primary uppercase tracking-wider mb-2">Current Window Preview</p>
           <div className="flex items-center justify-between text-sm">
