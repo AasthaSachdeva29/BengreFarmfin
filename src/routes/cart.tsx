@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { Header } from "@/components/Header";
-import { useStore, type OrderItem, type PaymentMethod, type DeliveryType, ROUTE_CUTOFF_TIME, PERSONAL_MIN_ORDER, PERSONAL_DELIVERY_CHARGE } from "@/lib/store";
+import { useStore, type OrderItem, type PaymentMethod, type DeliveryType, PERSONAL_MIN_ORDER, PERSONAL_DELIVERY_CHARGE } from "@/lib/store";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -28,6 +28,20 @@ const loadRazorpay = () => {
   });
 };
 
+// ✅ Helper: "11:15" → { h: 11, m: 15, totalMinutes: 675 }
+function parseTime(t: string) {
+  const [h, m] = t.split(":").map(Number);
+  return { h, m, totalMinutes: h * 60 + m };
+}
+
+// ✅ Helper: "11:15" → "11:15 AM" / "13:00" → "1:00 PM"
+function formatTime(t: string) {
+  const { h, m } = parseTime(t);
+  const period = h >= 12 ? "PM" : "AM";
+  const displayH = h > 12 ? h - 12 : h === 0 ? 12 : h;
+  return `${displayH}:${String(m).padStart(2, "0")} ${period}`;
+}
+
 function CartPage() {
   const { currentUser, state, placeOrder, setCartQty, clearCart } = useStore();
   const navigate = useNavigate();
@@ -37,7 +51,10 @@ function CartPage() {
   const [selectedAreaId, setSelectedAreaId] = useState<string>("");
   const [fullAddress, setFullAddress] = useState(currentUser?.address || "");
   const [placedOrder, setPlacedOrder] = useState<any>(null);
-  const [isPlacing, setIsPlacing] = useState(false); // ✅ loading state
+  const [isPlacing, setIsPlacing] = useState(false);
+
+  // ✅ Pull live settings from store (fetched from /api/settings on load)
+  const { orderStartTime, routeCutoffTime } = state.settings;
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -56,9 +73,7 @@ function CartPage() {
 
   const items: (OrderItem & { count: number })[] = Object.entries(cart).reduce((acc, [id, qty]) => {
     const m = state.menu.find((x) => x.id === id);
-    if (m) {
-      acc.push({ menuId: id, name: m.name, price: m.price, qty, count: m.count });
-    }
+    if (m) acc.push({ menuId: id, name: m.name, price: m.price, qty, count: m.count });
     return acc;
   }, [] as (OrderItem & { count: number })[]);
 
@@ -66,6 +81,7 @@ function CartPage() {
   const deliveryCharge = deliveryType === "personal" ? PERSONAL_DELIVERY_CHARGE : 0;
   const grandTotal = subtotal + deliveryCharge;
 
+  // ✅ Validation uses dynamic settings from store
   const getOrderValidation = () => {
     if (items.length === 0) return { ok: false, msg: "Cart is empty" };
     if (deliveryType === "daily_route") {
@@ -73,12 +89,12 @@ function CartPage() {
       if (!fullAddress.trim()) return { ok: false, msg: "Enter full address" };
 
       const now = new Date();
-      const totalMinutes = now.getHours() * 60 + now.getMinutes();
-      const startMinutes = 6 * 60;
-      const endMinutes = 11 * 60 + 15;
+      const nowMinutes = now.getHours() * 60 + now.getMinutes();
+      const start = parseTime(orderStartTime).totalMinutes;
+      const end   = parseTime(routeCutoffTime).totalMinutes;
 
-      if (totalMinutes < startMinutes) return { ok: false, msg: "Daily Route opens at 6:00 AM. Please come back later." };
-      if (totalMinutes >= endMinutes) return { ok: false, msg: "Daily Route closed (after 11:15 AM). Use Personal Delivery." };
+      if (nowMinutes < start) return { ok: false, msg: `Daily Route opens at ${formatTime(orderStartTime)}. Come back later.` };
+      if (nowMinutes >= end)  return { ok: false, msg: `Daily Route closed after ${formatTime(routeCutoffTime)}. Use Personal Delivery.` };
     } else {
       if (subtotal < PERSONAL_MIN_ORDER) return { ok: false, msg: `Min order ₹${PERSONAL_MIN_ORDER} for Personal` };
       if (!fullAddress.trim()) return { ok: false, msg: "Enter delivery address" };
@@ -88,7 +104,6 @@ function CartPage() {
 
   const validation = getOrderValidation();
 
-  // ✅ Shared function to finalize order after payment
   const finalizeOrder = async (method: PaymentMethod) => {
     setIsPlacing(true);
     try {
@@ -99,6 +114,7 @@ function CartPage() {
       }
       clearCart();
       setPlacedOrder(r.order);
+      toast.success(`Order #${r.order!.orderNo} placed! 🎉`);
     } catch (err: any) {
       toast.error("Something went wrong. Please contact support.");
     } finally {
@@ -138,12 +154,11 @@ function CartPage() {
         name: "Bengre Farm",
         description: "Fresh Dairy Delivery",
         order_id: orderId,
-        handler: async function (response: any) {
-          // ✅ Payment done — now save order to DB and show confirmation
+        handler: async function (_response: any) {
           await finalizeOrder("gpay");
         },
         modal: {
-          ondismiss: function() {
+          ondismiss: function () {
             toast.error("Payment cancelled. Your order was not placed.");
           }
         },
@@ -152,15 +167,12 @@ function CartPage() {
           email: currentUser.email,
           contact: currentUser.phone,
         },
-        theme: {
-          color: "#059669",
-        },
+        theme: { color: "#059669" },
       };
 
       const rzp = new (window as any).Razorpay(options);
       rzp.open();
     } else {
-      // COD
       await finalizeOrder("cod");
     }
   };
@@ -204,7 +216,6 @@ Thank you for ordering fresh from Bengre Farm!`;
       <Toaster richColors />
       <main className="container mx-auto px-4 py-6 max-w-2xl">
 
-        {/* ✅ ORDER CONFIRMATION SCREEN */}
         {placedOrder ? (
           <Card className="text-center py-10 shadow-warm animate-in fade-in duration-500">
             <CardContent className="space-y-6">
@@ -344,10 +355,11 @@ Thank you for ordering fresh from Bengre Farm!`;
                       <div className="text-xs font-bold text-primary flex items-center gap-2">
                         <Clock className="h-4 w-4" /> Route Delivery (11:30 AM - 1:30 PM)
                       </div>
+                      {/* ✅ Dynamic timing from API settings */}
                       <p className="text-[10px] text-muted-foreground">
                         ✓ No delivery charge <br />
                         ✓ No minimum order <br />
-                        ✓ <strong>Accepting orders 6:00 AM – 11:15 AM</strong>
+                        ✓ <strong>Accepting orders {formatTime(orderStartTime)} – {formatTime(routeCutoffTime)}</strong>
                       </p>
                     </div>
                     <div className="space-y-2">
