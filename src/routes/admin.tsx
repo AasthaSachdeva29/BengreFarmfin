@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Header } from "@/components/Header";
 import { useStore, type AppSettings } from "@/lib/store";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -10,7 +10,7 @@ import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { Toaster } from "@/components/ui/sonner";
-import { Trash2, Package, TrendingUp, Clock, CheckCircle, XCircle, AlertCircle, IndianRupee, Download } from "lucide-react";
+import { Trash2, Package, TrendingUp, Clock, CheckCircle, XCircle, AlertCircle, IndianRupee, Download, Bell, BellOff } from "lucide-react";
 
 export const Route = createFileRoute("/admin")({
   component: AdminPage,
@@ -62,6 +62,33 @@ function downloadOrdersCSV(orders: any[], filename: string) {
   toast.success(`Downloaded ${filename}`);
 }
 
+// 🔔 Play a pleasant notification chime using Web Audio API
+function playOrderChime() {
+  try {
+    const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+
+    const notes = [523.25, 659.25, 783.99, 1046.5]; // C5 E5 G5 C6 — a bright "ding-dong" chord
+    notes.forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.type = "sine";
+      osc.frequency.value = freq;
+
+      const startAt = ctx.currentTime + i * 0.18;
+      gain.gain.setValueAtTime(0, startAt);
+      gain.gain.linearRampToValueAtTime(0.3, startAt + 0.05);
+      gain.gain.exponentialRampToValueAtTime(0.001, startAt + 0.8);
+
+      osc.start(startAt);
+      osc.stop(startAt + 0.8);
+    });
+  } catch (e) {
+    console.warn("Audio playback failed", e);
+  }
+}
+
 function AdminPage() {
   const { currentUser, state, addMenuItem, updateMenuItem, removeMenuItem, setOrderStatus, todayKey, addArea, removeArea, updateSettings } = useStore();
   const navigate = useNavigate();
@@ -69,9 +96,46 @@ function AdminPage() {
   const [newArea, setNewArea] = useState({ name: "" });
   const [activeSection, setActiveSection] = useState<"orders" | "menu" | "areas" | "timings" | "history">("orders");
 
+  // 🔔 Notification state
+  const [soundEnabled, setSoundEnabled] = useState(true);
+  const knownOrderIdsRef = useRef<Set<string>>(new Set());
+  const isFirstLoadRef = useRef(true);
+
   useEffect(() => {
     if (currentUser && currentUser.role !== "admin") navigate({ to: "/" });
   }, [currentUser, navigate]);
+
+  // 🔔 Watch for new orders and play chime
+  useEffect(() => {
+    if (!currentUser || currentUser.role !== "admin") return;
+
+    const today = todayKey();
+    const todayOrders = state.orders.filter(o => o.dateKey === today);
+
+    if (isFirstLoadRef.current) {
+      // On first load, just record existing order IDs — don't play sound
+      todayOrders.forEach(o => knownOrderIdsRef.current.add(`${o.dateKey}-${o.orderNo}`));
+      isFirstLoadRef.current = false;
+      return;
+    }
+
+    // Check for any order IDs we haven't seen before
+    let newCount = 0;
+    todayOrders.forEach(o => {
+      const key = `${o.dateKey}-${o.orderNo}`;
+      if (!knownOrderIdsRef.current.has(key)) {
+        knownOrderIdsRef.current.add(key);
+        newCount++;
+      }
+    });
+
+    if (newCount > 0 && soundEnabled) {
+      playOrderChime();
+      toast.success(`🛒 ${newCount} new order${newCount > 1 ? "s" : ""} received!`, {
+        duration: 5000,
+      });
+    }
+  }, [state.orders, soundEnabled, currentUser]);
 
   if (!currentUser || currentUser.role !== "admin") {
     return <div className="min-h-screen bg-gradient-warm"><Header /></div>;
@@ -100,9 +164,26 @@ function AdminPage() {
       <Header />
       <Toaster richColors />
       <main className="container mx-auto px-4 py-6 space-y-6">
-        <div>
-          <h1 className="font-display text-3xl font-bold">Admin Dashboard</h1>
-          <p className="text-sm text-muted-foreground">Today: {today}</p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="font-display text-3xl font-bold">Admin Dashboard</h1>
+            <p className="text-sm text-muted-foreground">Today: {today}</p>
+          </div>
+          {/* 🔔 Sound toggle */}
+          <button
+            onClick={() => {
+              setSoundEnabled(v => !v);
+              toast(soundEnabled ? "🔕 Order sound muted" : "🔔 Order sound enabled");
+            }}
+            className={`flex items-center gap-2 px-3 py-2 rounded-xl border-2 text-sm font-medium transition-all ${
+              soundEnabled
+                ? "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                : "border-muted bg-muted/50 text-muted-foreground hover:bg-muted"
+            }`}
+          >
+            {soundEnabled ? <Bell className="h-4 w-4" /> : <BellOff className="h-4 w-4" />}
+            {soundEnabled ? "Sound On" : "Sound Off"}
+          </button>
         </div>
 
         {/* Analytics Cards */}
@@ -132,7 +213,6 @@ function AdminPage() {
         {/* Orders Section */}
         {activeSection === "orders" && (
           <div className="space-y-4">
-            {/* ✅ CSV download for today's orders */}
             <div className="flex justify-end">
               <Button
                 variant="outline"
@@ -324,7 +404,6 @@ function AdminPage() {
                 <CardTitle className="font-display">All Orders History</CardTitle>
                 <CardDescription>{allOrders.length} total orders</CardDescription>
               </div>
-              {/* ✅ CSV download for ALL orders */}
               <Button
                 variant="outline"
                 size="sm"
