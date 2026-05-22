@@ -36,7 +36,7 @@ export type PaymentMethod = "gpay" | "cod";
 export type DeliveryType = "daily_route" | "personal";
 
 export const ORDER_START_TIME = "06:00";
-export const ROUTE_CUTOFF_TIME = "11:15";
+export const ROUTE_CUTOFF_TIME = "15:15";
 export const PERSONAL_MIN_ORDER = 180;
 export const PERSONAL_DELIVERY_CHARGE = 50;
 
