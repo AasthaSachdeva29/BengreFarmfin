@@ -24,7 +24,6 @@ const userSchema = new mongoose.Schema({
   address: { type: String, default: '' },
   phone: { type: String, default: '' }
 });
-
 const User = mongoose.models.User || mongoose.model('User', userSchema);
 
 // Product Schema
@@ -47,6 +46,14 @@ const areaSchema = new mongoose.Schema({
   name: { type: String, required: true }
 });
 const Area = mongoose.models.Area || mongoose.model('Area', areaSchema);
+
+// Settings Schema  ← NEW
+const settingsSchema = new mongoose.Schema({
+  key: { type: String, required: true, unique: true },
+  orderStartTime: { type: String, default: "06:00" },
+  routeCutoffTime: { type: String, default: "11:15" },
+});
+const Settings = mongoose.models.Settings || mongoose.model('Settings', settingsSchema);
 
 // Order Schema
 const orderSchema = new mongoose.Schema({
@@ -137,6 +144,13 @@ async function connectDB() {
     ]);
     console.log("Default products created");
   }
+
+  // Seed default settings  ← NEW
+  const settingsExist = await Settings.findOne({ key: "main" });
+  if (!settingsExist) {
+    await Settings.create({ key: "main", orderStartTime: "06:00", routeCutoffTime: "11:15" });
+    console.log("Default settings created");
+  }
 }
 
 // Connect DB on every request
@@ -199,7 +213,6 @@ app.get("/api/health", async (_req, res) => {
 app.get("/api/products", async (req, res) => {
   try {
     const products = await Product.find({});
-    // Transform _id out to use our custom id
     const mapped = products.map(p => {
       const { _id, __v, ...rest } = p.toObject();
       return rest;
@@ -273,6 +286,45 @@ app.delete("/api/areas/:id", async (req, res) => {
   }
 });
 
+// --- Settings Endpoints ---  ← NEW
+app.get("/api/settings", async (_req, res) => {
+  try {
+    const s = await Settings.findOne({ key: "main" });
+    res.json({
+      ok: true,
+      settings: {
+        orderStartTime: s?.orderStartTime || "06:00",
+        routeCutoffTime: s?.routeCutoffTime || "11:15",
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: "Failed to fetch settings" });
+  }
+});
+
+app.put("/api/settings", async (req, res) => {
+  try {
+    const { orderStartTime, routeCutoffTime } = req.body;
+    if (!orderStartTime || !routeCutoffTime)
+      return res.status(400).json({ ok: false, error: "Both orderStartTime and routeCutoffTime are required" });
+
+    const s = await Settings.findOneAndUpdate(
+      { key: "main" },
+      { orderStartTime, routeCutoffTime },
+      { new: true, upsert: true }
+    );
+    res.json({
+      ok: true,
+      settings: {
+        orderStartTime: s.orderStartTime,
+        routeCutoffTime: s.routeCutoffTime,
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: "Failed to update settings" });
+  }
+});
+
 // --- Order Endpoints ---
 app.get("/api/orders", async (req, res) => {
   try {
@@ -302,7 +354,6 @@ app.post("/api/orders", async (req, res) => {
       );
 
       if (!updatedProduct) {
-        // Rollback transaction if any product fails due to insufficient stock
         await session.abortTransaction();
         session.endSession();
         return res.status(400).json({
@@ -350,7 +401,7 @@ app.post("/api/orders", async (req, res) => {
 app.put("/api/orders/:dateKey/:orderNo/status", async (req, res) => {
   try {
     const { status } = req.body;
-    const updateData = { status };
+    const updateData: any = { status };
     if (status === 'delivered') updateData.deliveredAt = Date.now();
 
     const order = await Order.findOneAndUpdate(
