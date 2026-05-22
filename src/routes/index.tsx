@@ -21,11 +21,21 @@ export const Route = createFileRoute("/")({
   }),
 });
 
+// ✅ "11:15" → "11:15 AM" / "13:00" → "1:00 PM"
+function formatTime(t: string) {
+  const [h, m] = t.split(":").map(Number);
+  const period = h >= 12 ? "PM" : "AM";
+  const displayH = h > 12 ? h - 12 : h === 0 ? 12 : h;
+  return `${displayH}:${String(m).padStart(2, "0")} ${period}`;
+}
+
 function HomePage() {
   const { currentUser, state, setCartQty } = useStore();
   const navigate = useNavigate();
 
-  // Group menu by category
+  // ✅ Pull live settings from store
+  const { orderStartTime, routeCutoffTime } = state.settings;
+
   const groupedMenu = useMemo(() => {
     const groups: Record<string, MenuItem[]> = {};
     state.menu.forEach((item) => {
@@ -35,7 +45,6 @@ function HomePage() {
     return groups;
   }, [state.menu]);
 
-  // Track selected variant ID for each category
   const [selectedVariants, setSelectedVariants] = useState<Record<string, string>>({});
 
   const getSelectedId = (category: string, items: MenuItem[]) =>
@@ -45,13 +54,11 @@ function HomePage() {
     const itemId = getSelectedId(category, items);
     const item = state.menu.find(m => m.id === itemId);
     if (!item) return;
-    
     const currentQty = state.cart[itemId] || 0;
     if (currentQty >= item.count) {
       toast.error(`Only ${item.count} left in stock!`);
       return;
     }
-
     setCartQty(itemId, currentQty + 1);
     toast.success(`Added ${item.name} (${item.unit}) to cart`, {
       action: currentUser
@@ -60,8 +67,6 @@ function HomePage() {
     });
   };
 
-  // NOT using useMemo — state.cart is mutated in place so reference never changes;
-  // the store's tick mechanism re-renders the component, so plain computation is correct.
   const cartItems = Object.entries(state.cart)
     .map(([id, qty]) => ({ item: state.menu.find(m => m.id === id), qty }))
     .filter(i => i.item && i.qty > 0);
@@ -95,7 +100,7 @@ function HomePage() {
                 </p>
                 <div className="flex flex-wrap gap-4">
                   {currentUser ? (
-                    <Link 
+                    <Link
                       to={currentUser.role === "admin" ? "/admin" : currentUser.role === "delivery" ? "/delivery" : "/shop"}
                       className="text-lg px-8 py-4 bg-gradient-primary text-white rounded-xl hover:opacity-90 transition-opacity shadow-warm font-bold"
                     >
@@ -103,16 +108,10 @@ function HomePage() {
                     </Link>
                   ) : (
                     <>
-                      <Link 
-                        to="/login" 
-                        className="text-lg px-8 py-4 bg-gradient-primary text-white rounded-xl hover:opacity-90 transition-opacity shadow-warm font-bold"
-                      >
+                      <Link to="/login" className="text-lg px-8 py-4 bg-gradient-primary text-white rounded-xl hover:opacity-90 transition-opacity shadow-warm font-bold">
                         Login
                       </Link>
-                      <Link 
-                        to="/signup" 
-                        className="text-lg px-8 py-4 border-2 border-primary/20 text-primary rounded-xl hover:bg-primary/5 transition-colors font-bold"
-                      >
+                      <Link to="/signup" className="text-lg px-8 py-4 border-2 border-primary/20 text-primary rounded-xl hover:bg-primary/5 transition-colors font-bold">
                         Create Account
                       </Link>
                     </>
@@ -120,14 +119,14 @@ function HomePage() {
                 </div>
               </div>
 
-              {/* Feature Highlights */}
+              {/* ✅ Feature cards now use dynamic times */}
               <div className="grid grid-cols-2 gap-4 animate-in fade-in slide-in-from-right-4 duration-700 delay-200">
-                <FeatureCard icon={<Truck className="h-6 w-6" />} title="0₹ Delivery" desc="On our daily route (11:30 AM)" color="text-primary" />
-                <FeatureCard icon={<Clock className="h-6 w-6" />} title="Route Timing" desc="Orders close by 11:15 AM" color="text-amber-600" />
-                <FeatureCard icon={<Smartphone className="h-6 w-6" />} title="Personal Delivery" desc="Instant dispatch for min ₹180" color="text-emerald-600" />
-                <FeatureCard icon={<ShieldCheck className="h-6 w-6" />} title="100% Pure" desc="Direct from our own farm" color="text-blue-600" />
-                <FeatureCard icon={<Leaf className="h-6 w-6" />} title="Farm Fresh" desc="No preservatives, no chemicals" color="text-green-600" />
-                <FeatureCard icon={<Heart className="h-6 w-6" />} title="Traditional" desc="Traditional methods, pure taste" color="text-rose-600" />
+                <FeatureCard icon={<Truck className="h-6 w-6" />}       title="0₹ Delivery"       desc="On our daily route (11:30 AM)"                              color="text-primary" />
+                <FeatureCard icon={<Clock className="h-6 w-6" />}       title="Route Timing"      desc={`Orders close by ${formatTime(routeCutoffTime)}`}           color="text-amber-600" />
+                <FeatureCard icon={<Smartphone className="h-6 w-6" />}  title="Personal Delivery" desc="Instant dispatch for min ₹180"                              color="text-emerald-600" />
+                <FeatureCard icon={<ShieldCheck className="h-6 w-6" />} title="100% Pure"         desc="Direct from our own farm"                                   color="text-blue-600" />
+                <FeatureCard icon={<Leaf className="h-6 w-6" />}        title="Farm Fresh"        desc="No preservatives, no chemicals"                             color="text-green-600" />
+                <FeatureCard icon={<Heart className="h-6 w-6" />}       title="Traditional"       desc="Traditional methods, pure taste"                            color="text-rose-600" />
               </div>
             </div>
           </div>
@@ -144,22 +143,18 @@ function HomePage() {
                 Quickly add your daily essentials with flexible size options.
               </p>
             </div>
-            
+
             <div className="grid gap-6 lg:grid-cols-3 xl:grid-cols-4 max-w-7xl mx-auto">
-              {/* Product Grid */}
               <div className="lg:col-span-2 xl:col-span-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 {Object.entries(groupedMenu).map(([category, items]) => {
                   const selectedId = getSelectedId(category, items);
                   const selectedItem = items.find(i => i.id === selectedId) || items[0];
-                  
                   return (
                     <Card key={category} className={`border-2 transition-colors shadow-sm bg-card ${selectedItem.count <= 0 ? "opacity-50 grayscale border-destructive/20" : "hover:border-primary/40"}`}>
                       <CardContent className="p-5 flex flex-col justify-between h-full space-y-4">
                         <div>
                           <h3 className="font-display font-bold text-lg mb-1">{category}</h3>
-                          <div className="text-2xl font-display font-black text-primary">
-                            ₹{selectedItem.price}
-                          </div>
+                          <div className="text-2xl font-display font-black text-primary">₹{selectedItem.price}</div>
                           {selectedItem.count > 0 ? (
                             <div className="text-xs text-amber-600 font-semibold mt-1">{selectedItem.count} left in stock</div>
                           ) : (
@@ -170,20 +165,13 @@ function HomePage() {
                         {items.length > 1 ? (
                           <div className="space-y-1.5">
                             <label className="text-[10px] font-bold uppercase text-muted-foreground">Select Size</label>
-                            <Select
-                              value={selectedId}
-                              onValueChange={(val) => setSelectedVariants(prev => ({ ...prev, [category]: val }))}
-                            >
+                            <Select value={selectedId} onValueChange={(val) => setSelectedVariants(prev => ({ ...prev, [category]: val }))}>
                               <SelectTrigger className="h-10 w-full border-primary/10">
-                                <SelectValue>
-                                  <span>{selectedItem.unit} — ₹{selectedItem.price}</span>
-                                </SelectValue>
+                                <SelectValue><span>{selectedItem.unit} — ₹{selectedItem.price}</span></SelectValue>
                               </SelectTrigger>
                               <SelectContent>
                                 {items.map(item => (
-                                  <SelectItem key={item.id} value={item.id}>
-                                    {item.unit} — ₹{item.price}
-                                  </SelectItem>
+                                  <SelectItem key={item.id} value={item.id}>{item.unit} — ₹{item.price}</SelectItem>
                                 ))}
                               </SelectContent>
                             </Select>
@@ -194,7 +182,7 @@ function HomePage() {
                           </div>
                         )}
 
-                        <Button 
+                        <Button
                           onClick={() => handleAddToCart(category, items)}
                           disabled={!selectedItem.available || selectedItem.count <= 0}
                           className="w-full bg-gradient-primary hover:opacity-90 gap-2 h-11 font-bold shadow-sm"
@@ -207,7 +195,7 @@ function HomePage() {
                 })}
               </div>
 
-              {/* Homepage Mini Cart */}
+              {/* Mini Cart */}
               <div className="lg:col-span-1" id="mini-cart">
                 <Card className="border-2 border-primary/20 shadow-warm lg:sticky lg:top-24">
                   <CardHeader className="pb-3 border-b">
@@ -241,13 +229,11 @@ function HomePage() {
                         ))}
                       </div>
                     )}
-                    
                     <div className="p-4 bg-muted/30 border-t space-y-4">
                       <div className="flex justify-between items-center font-bold">
                         <span>Total</span>
                         <span className="text-xl text-primary">₹{cartTotal}</span>
                       </div>
-
                       {!currentUser ? (
                         <div className="space-y-2 pt-2 border-t border-primary/10">
                           <p className="text-[10px] font-bold text-center text-primary uppercase tracking-wider">Login to Checkout</p>
@@ -257,7 +243,7 @@ function HomePage() {
                           </div>
                         </div>
                       ) : (
-                        <Button 
+                        <Button
                           onClick={() => navigate({ to: "/shop" })}
                           disabled={cartItems.length === 0}
                           className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold h-12"
@@ -273,7 +259,7 @@ function HomePage() {
           </div>
         </section>
 
-        {/* Detailed Explanation Showcase */}
+        {/* Vibes of Village */}
         <section className="py-20 bg-card/30">
           <div className="container mx-auto px-4">
             <div className="max-w-3xl mx-auto text-center mb-16">
@@ -283,23 +269,17 @@ function HomePage() {
                 "Each product carries the story of our farm and the traditional wisdom of our elders."
               </p>
             </div>
-
             <div className="grid gap-12 max-w-6xl mx-auto">
               {Object.entries(groupedMenu).map(([category, items], index) => {
                 const mainItem = items[0];
                 const isEven = index % 2 === 0;
-                
                 return (
                   <div key={category} className={`flex flex-col ${isEven ? "lg:flex-row" : "lg:flex-row-reverse"} gap-10 items-center animate-in fade-in duration-1000`}>
                     <div className="lg:w-1/2 group relative">
                       <div className="absolute -inset-4 bg-primary/5 rounded-3xl blur-xl group-hover:bg-primary/10 transition-all" />
                       <div className="relative aspect-video rounded-2xl overflow-hidden border-4 border-white shadow-2xl">
                         {mainItem.imageUrl ? (
-                          <img 
-                            src={mainItem.imageUrl} 
-                            alt={category} 
-                            className="object-cover w-full h-full transition-transform duration-700 group-hover:scale-105" 
-                          />
+                          <img src={mainItem.imageUrl} alt={category} className="object-cover w-full h-full transition-transform duration-700 group-hover:scale-105" />
                         ) : (
                           <div className="w-full h-full bg-muted flex items-center justify-center text-7xl">
                             {category.includes("Milk") ? "🥛" : category.includes("Ghee") ? "🫕" : "🍶"}
@@ -307,27 +287,19 @@ function HomePage() {
                         )}
                       </div>
                     </div>
-                    
                     <div className="lg:w-1/2 space-y-6">
                       <div className="space-y-2">
                         <h3 className="font-display text-3xl font-bold text-primary">{category}</h3>
                         <div className="flex gap-2 flex-wrap">
-                          {items.map(i => (
-                            <Badge key={i.id} variant="outline" className="bg-white/50">{i.unit}</Badge>
-                          ))}
+                          {items.map(i => <Badge key={i.id} variant="outline" className="bg-white/50">{i.unit}</Badge>)}
                         </div>
                       </div>
-                      <p className="text-muted-foreground leading-relaxed text-lg">
-                        {mainItem.description}
-                      </p>
+                      <p className="text-muted-foreground leading-relaxed text-lg">{mainItem.description}</p>
                       <div className="pt-4">
-                        <Button 
-                          variant="link" 
+                        <Button
+                          variant="link"
                           className="p-0 h-auto text-primary font-bold group gap-2"
-                          onClick={() => {
-                            const orderSection = document.getElementById('quick-order');
-                            orderSection?.scrollIntoView({ behavior: 'smooth' });
-                          }}
+                          onClick={() => document.getElementById('quick-order')?.scrollIntoView({ behavior: 'smooth' })}
                         >
                           Order {category} now <ChevronRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
                         </Button>
@@ -351,13 +323,15 @@ function HomePage() {
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-y-4 gap-x-8 text-sm font-semibold">
                 {state.areas.map(a => (
                   <div key={a.id} className="flex items-center gap-2 text-primary">
-                    <MapPin className="h-4 w-4 opacity-50" />
-                    {a.name}
+                    <MapPin className="h-4 w-4 opacity-50" /> {a.name}
                   </div>
                 ))}
               </div>
+              {/* ✅ Dynamic order cutoff time */}
               <div className="mt-8 pt-6 border-t text-center space-y-3">
-                <p className="text-sm text-muted-foreground">Order by <strong>11:15 AM</strong> for same-day free delivery on this route.</p>
+                <p className="text-sm text-muted-foreground">
+                  Order by <strong>{formatTime(routeCutoffTime)}</strong> for same-day free delivery on this route.
+                </p>
                 <div className="inline-flex items-center gap-2 bg-amber-50 text-amber-700 px-4 py-2 rounded-full text-xs font-bold ring-1 ring-amber-200">
                   <Truck className="h-4 w-4" /> Personal delivery available for all other Chandigarh areas (Min ₹180)
                 </div>
@@ -379,7 +353,7 @@ function HomePage() {
                   </div>
                 </div>
                 <p className="text-xs text-muted-foreground leading-relaxed max-w-xs">
-                  We bring the pure, unadulterated taste of the village to your city home. 
+                  We bring the pure, unadulterated taste of the village to your city home.
                   Freshness you can trust, quality you can taste.
                 </p>
                 <div className="pt-2">
@@ -412,7 +386,6 @@ function HomePage() {
                 </div>
               </div>
             </div>
-            
             <div className="mt-12 pt-8 border-t text-center text-[10px] text-muted-foreground">
               <p>© {new Date().getFullYear()} Bengre Farm™ — All Rights Reserved.</p>
               <p className="mt-1 font-medium">Naturally Sourced • Traditionally Crafted • Freshly Delivered</p>
