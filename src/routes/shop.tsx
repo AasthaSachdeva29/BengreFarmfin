@@ -20,7 +20,6 @@ const fmt12 = (t: string) => {
   return `${h % 12 || 12}:${String(m).padStart(2, "0")} ${ampm}`;
 };
 
-// Now reads times dynamically from settings instead of hardcoded constants
 function getRouteOrderStatus(settings: { orderStartTime: string; routeCutoffTime: string }): "before" | "open" | "closed" {
   const now = new Date();
   const total = now.getHours() * 60 + now.getMinutes();
@@ -31,7 +30,7 @@ function getRouteOrderStatus(settings: { orderStartTime: string; routeCutoffTime
   const end = ch * 60 + cm;
 
   if (total < start) return "before";
-  if (total < end) return "open";
+  if (total <= end) return "open";
   return "closed";
 }
 
@@ -51,16 +50,15 @@ function ShopPage() {
     return () => clearInterval(interval);
   }, [state.settings]);
 
+  // ✅ Only redirect AFTER hydration is complete — prevents refresh logout bug
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    const t = setTimeout(() => {
-      if (!currentUser) navigate({ to: "/login" });
-      else if (currentUser.role !== "user") navigate({ to: currentUser.role === "admin" ? "/admin" : "/delivery" });
-    }, 100);
-    return () => clearTimeout(t);
-  }, [currentUser, navigate]);
+    if (!state.hydrated) return; // wait for initial fetch to finish
+    if (!currentUser) navigate({ to: "/login" });
+    else if (currentUser.role !== "user") navigate({ to: currentUser.role === "admin" ? "/admin" : "/delivery" });
+  }, [state.hydrated, currentUser, navigate]);
 
-  if (!currentUser || currentUser.role !== "user") {
+  // Show blank header while hydrating (avoids flash of login page)
+  if (!state.hydrated || !currentUser || currentUser.role !== "user") {
     return <div className="min-h-screen bg-gradient-warm"><Header /></div>;
   }
 
@@ -133,7 +131,7 @@ Thank you for ordering fresh from Bengre Farm!`;
               <div className="mb-4 flex items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
                 <Clock className="h-4 w-4 shrink-0" />
                 <span>
-                  <strong>Daily Route orders open</strong> — accepting until <strong>{fmt12(state.settings.routeCutoffTime)}</strong>. Place your order now!
+                  <strong>Orders open</strong> — accepting until <strong>{fmt12(state.settings.routeCutoffTime)}</strong>. Place your order now!
                 </span>
               </div>
             )}
@@ -141,7 +139,7 @@ Thank you for ordering fresh from Bengre Farm!`;
               <div className="mb-4 flex items-center gap-3 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700">
                 <Clock className="h-4 w-4 shrink-0" />
                 <span>
-                  <strong>Daily Route orders open at {fmt12(state.settings.orderStartTime)}.</strong> You can browse the menu and add items to cart now.
+                  <strong>Orders open at {fmt12(state.settings.orderStartTime)}.</strong> You can browse the menu and add items to cart now.
                 </span>
               </div>
             )}
@@ -149,7 +147,7 @@ Thank you for ordering fresh from Bengre Farm!`;
               <div className="mb-4 flex items-center gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
                 <AlertCircle className="h-4 w-4 shrink-0" />
                 <span>
-                  <strong>Daily Route orders closed</strong> for today (after {fmt12(state.settings.routeCutoffTime)}). You can still place a <strong>Personal Delivery</strong> order anytime.
+                  <strong>Orders closed</strong> for today (after {fmt12(state.settings.routeCutoffTime)}). Please come back tomorrow from {fmt12(state.settings.orderStartTime)}.
                 </span>
               </div>
             )}
