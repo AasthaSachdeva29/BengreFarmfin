@@ -419,16 +419,17 @@ function TimingsSection({
   settings: StoreSettings;
   onSave: (s: StoreSettings) => Promise<void>;
 }) {
-  const [start, setStart] = useState(settings.orderStartTime);
-  const [cutoff, setCutoff] = useState(settings.routeCutoffTime);
+  const [start, setStart] = useState("");
+  const [cutoff, setCutoff] = useState("");
 
-  // Keep local state in sync if settings load after initial render
+  // Sync when settings load from API (they start as defaults until fetch completes)
   useEffect(() => {
-    setStart(settings.orderStartTime);
-    setCutoff(settings.routeCutoffTime);
+    if (settings.orderStartTime) setStart(settings.orderStartTime);
+    if (settings.routeCutoffTime) setCutoff(settings.routeCutoffTime);
   }, [settings.orderStartTime, settings.routeCutoffTime]);
 
   const fmt12 = (t: string) => {
+    if (!t || !t.includes(":")) return t;
     const [h, m] = t.split(":").map(Number);
     const ampm = h >= 12 ? "PM" : "AM";
     return `${h % 12 || 12}:${String(m).padStart(2, "0")} ${ampm}`;
@@ -446,24 +447,27 @@ function TimingsSection({
       </CardHeader>
       <CardContent className="space-y-6 max-w-sm">
         <div className="space-y-2">
-          <Label>Opening Time</Label>
-          <Input
+          <Label htmlFor="opening-time">Opening Time</Label>
+          <input
+            id="opening-time"
             type="time"
             value={start}
             onChange={(e) => setStart(e.target.value)}
-            className="h-11"
+            className="flex h-11 w-full rounded-md border border-input bg-background px-3 py-2 text-base ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           />
           {start && (
             <p className="text-xs text-muted-foreground">Orders will open at <strong>{fmt12(start)}</strong></p>
           )}
         </div>
+
         <div className="space-y-2">
-          <Label>Closing Time (Order Cutoff)</Label>
-          <Input
+          <Label htmlFor="closing-time">Closing Time (Order Cutoff)</Label>
+          <input
+            id="closing-time"
             type="time"
             value={cutoff}
             onChange={(e) => setCutoff(e.target.value)}
-            className="h-11"
+            className="flex h-11 w-full rounded-md border border-input bg-background px-3 py-2 text-base ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           />
           {cutoff && (
             <p className="text-xs text-muted-foreground">Orders will close at <strong>{fmt12(cutoff)}</strong></p>
