@@ -76,6 +76,7 @@ interface Store {
   areas: DeliveryArea[];
   cart: Record<string, number>;
   settings: StoreSettings;
+  hydrated: boolean; // true once initial fetch is done — prevents premature redirect on refresh
 }
 
 const todayKey = () => {
@@ -110,6 +111,7 @@ let _store: Store = {
   areas: [],
   cart: initialLocal.cart,
   settings: { orderStartTime: "06:00", routeCutoffTime: "11:15" },
+  hydrated: false,
 };
 
 const listeners = new Set<() => void>();
@@ -176,9 +178,12 @@ export function useStore() {
           if (areaRes.ok) s.areas = areaRes.areas;
           if (orderRes.ok) s.orders = orderRes.orders;
           if (settingsRes.ok) s.settings = settingsRes.settings;
+          s.hydrated = true; // mark done so redirect guard can fire
         });
       } catch (err) {
         console.error("Failed to fetch store data", err);
+        // Even on error, mark hydrated so the page doesn't hang forever
+        mutate(s => { s.hydrated = true; });
       }
     };
 
@@ -187,8 +192,8 @@ export function useStore() {
   }, []);
 
   const currentUser = snap.users.find((u) => u.id === snap.currentUserId) ||
-    (snap.currentUserId === 'admin' ? { id: 'admin', name: 'Admin', role: 'admin', email: 'admin@bengre.farm', password: '', address: '', phone: '' } : null) ||
-    (snap.currentUserId === 'delivery' ? { id: 'delivery', name: 'Delivery Boy', role: 'delivery', email: '', password: '', address: '', phone: '' } : null);
+    (snap.currentUserId === 'admin' ? { id: 'admin', name: 'Admin', role: 'admin' as Role, email: 'admin@bengre.farm', password: '', address: '', phone: '' } : null) ||
+    (snap.currentUserId === 'delivery' ? { id: 'delivery', name: 'Delivery Boy', role: 'delivery' as Role, email: '', password: '', address: '', phone: '' } : null);
 
   return {
     state: snap,
