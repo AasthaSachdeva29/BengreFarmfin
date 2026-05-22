@@ -62,15 +62,40 @@ function downloadOrdersCSV(orders: any[], filename: string) {
   toast.success(`Downloaded ${filename}`);
 }
 
-// 🔔 Play a pleasant notification chime using Web Audio API
-// FIX: Resume AudioContext first to handle browser autoplay policy
+// ─────────────────────────────────────────────
+// 🔔 AUDIO — single shared AudioContext
+// Browsers suspend audio until the user interacts.
+// We create ONE context and keep it alive, unlocking
+// it on the first click/tap anywhere on the page.
+// ─────────────────────────────────────────────
+let sharedAudioCtx: AudioContext | null = null;
+
+function getAudioContext(): AudioContext {
+  if (!sharedAudioCtx) {
+    sharedAudioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+  }
+  return sharedAudioCtx;
+}
+
+// Call once on any user interaction to unlock audio
+function unlockAudio() {
+  try {
+    const ctx = getAudioContext();
+    if (ctx.state === "suspended") {
+      ctx.resume();
+    }
+  } catch (e) {
+    // ignore
+  }
+}
+
+// Play a bright C5→E5→G5→C6 chime
 function playOrderChime() {
   try {
-    const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+    const ctx = getAudioContext();
 
-    // ✅ Resume context if browser suspended it due to autoplay policy
     const playNotes = () => {
-      const notes = [523.25, 659.25, 783.99, 1046.5]; // C5 E5 G5 C6 — bright "ding-dong"
+      const notes = [523.25, 659.25, 783.99, 1046.5]; // C5 E5 G5 C6
       notes.forEach((freq, i) => {
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
@@ -89,6 +114,7 @@ function playOrderChime() {
       });
     };
 
+    // If still suspended (shouldn't happen after unlock, but just in case)
     if (ctx.state === "suspended") {
       ctx.resume().then(playNotes);
     } else {
@@ -99,20 +125,22 @@ function playOrderChime() {
   }
 }
 
-// 🔔 Request browser notification permission
+// ─────────────────────────────────────────────
+// 🔔 BROWSER PUSH NOTIFICATIONS
+// ─────────────────────────────────────────────
 function requestNotificationPermission() {
   if ("Notification" in window && Notification.permission === "default") {
     Notification.requestPermission().then((permission) => {
       if (permission === "granted") {
         toast.success("🔔 Browser notifications enabled!");
       } else if (permission === "denied") {
-        toast.error("Browser notifications blocked. You can enable them in browser settings.");
+        toast.error("Browser notifications blocked. Enable them in browser settings.");
       }
     });
   }
 }
 
-// 🔔 Show browser push notification (works even when tab is in background)
+// Works even when the tab is in the background
 function showBrowserNotification(count: number, orderNos: number[]) {
   if (!("Notification" in window) || Notification.permission !== "granted") return;
 
@@ -123,11 +151,14 @@ function showBrowserNotification(count: number, orderNos: number[]) {
     body: `${count} new order${count > 1 ? "s" : ""} received! (${orderList}${extra})`,
     icon: "/favicon.ico",
     badge: "/favicon.ico",
-    tag: "new-order", // replaces previous notification instead of stacking
-    requireInteraction: true, // stays until admin clicks it
+    tag: "new-order",        // replaces previous instead of stacking
+    requireInteraction: true, // stays until admin dismisses it
   });
 }
 
+// ─────────────────────────────────────────────
+// 🏠 ADMIN PAGE
+// ─────────────────────────────────────────────
 function AdminPage() {
   const { currentUser, state, addMenuItem, updateMenuItem, removeMenuItem, setOrderStatus, todayKey, addArea, removeArea, updateSettings } = useStore();
   const navigate = useNavigate();
@@ -143,20 +174,40 @@ function AdminPage() {
   const knownOrderIdsRef = useRef<Set<string>>(new Set());
   const isFirstLoadRef = useRef(true);
 
+  // Redirect non-admins
   useEffect(() => {
     if (currentUser && currentUser.role !== "admin") navigate({ to: "/" });
   }, [currentUser, navigate]);
 
-  // 🔔 Request browser notification permission when admin logs in
+  // ✅ FIX: Unlock audio on ANY click or touch on the page
+  // This is the key fix — browsers require a user gesture before audio plays.
+  // We attach this listener once when the admin page mounts.
+  useEffect(() => {
+    const unlock = () => {
+      unlockAudio();
+      window.removeEventListener("click", unlock);
+      window.removeEventListener("touchstart", unlock);
+    };
+    window.addEventListener("click", unlock);
+    window.addEventListener("touchstart", unlock);
+    return () => {
+      window.removeEventListener("click", unlock);
+      window.removeEventListener("touchstart", unlock);
+    };
+  }, []);
+
+  // 🔔 Ask for browser notification permission when admin logs in
   useEffect(() => {
     if (!currentUser || currentUser.role !== "admin") return;
     if ("Notification" in window && Notification.permission === "default") {
       requestNotificationPermission();
-      setNotifPermission(Notification.permission);
+      setTimeout(() => {
+        if ("Notification" in window) setNotifPermission(Notification.permission);
+      }, 1500);
     }
   }, [currentUser]);
 
-  // 🔔 Watch for new orders — play chime + show browser notification
+  // 🔔 Watch for new orders — chime + toast + browser notification
   useEffect(() => {
     if (!currentUser || currentUser.role !== "admin") return;
 
@@ -164,13 +215,13 @@ function AdminPage() {
     const todayOrders = state.orders.filter(o => o.dateKey === today);
 
     if (isFirstLoadRef.current) {
-      // On first load, just record existing order IDs — don't play sound
+      // On first load, record existing IDs silently — don't alert
       todayOrders.forEach(o => knownOrderIdsRef.current.add(`${o.dateKey}-${o.orderNo}`));
       isFirstLoadRef.current = false;
       return;
     }
 
-    // Check for any order IDs we haven't seen before
+    // Detect genuinely new orders
     const newOrderNos: number[] = [];
     todayOrders.forEach(o => {
       const key = `${o.dateKey}-${o.orderNo}`;
@@ -181,17 +232,18 @@ function AdminPage() {
     });
 
     if (newOrderNos.length > 0) {
-      // ✅ Play chime if sound is enabled
+      // ✅ Play chime (will work because audio is unlocked on first interaction)
       if (soundEnabled) {
         playOrderChime();
       }
 
-      // ✅ Show in-app toast
-      toast.success(`🛒 ${newOrderNos.length} new order${newOrderNos.length > 1 ? "s" : ""} received! (${newOrderNos.map(n => `#${n}`).join(", ")})`, {
-        duration: 6000,
-      });
+      // ✅ In-app toast with order numbers
+      toast.success(
+        `🛒 ${newOrderNos.length} new order${newOrderNos.length > 1 ? "s" : ""} received! (${newOrderNos.map(n => `#${n}`).join(", ")})`,
+        { duration: 6000 }
+      );
 
-      // ✅ Show browser push notification (works in background tab)
+      // ✅ OS-level browser notification (works in background tab)
       showBrowserNotification(newOrderNos.length, newOrderNos);
     }
   }, [state.orders, soundEnabled, currentUser]);
@@ -218,19 +270,18 @@ function AdminPage() {
     toast.success("Item added");
   };
 
-  // 🔔 Handle notification permission toggle
   const handleNotifToggle = () => {
     if (!("Notification" in window)) {
       toast.error("Your browser doesn't support notifications.");
       return;
     }
     if (Notification.permission === "denied") {
-      toast.error("Notifications are blocked. Please enable them in your browser settings (click the lock icon in the address bar).");
+      toast.error("Notifications are blocked. Click the 🔒 lock icon in your browser address bar to enable them.");
       return;
     }
     if (Notification.permission === "default") {
       requestNotificationPermission();
-      setTimeout(() => setNotifPermission(Notification.permission), 1000);
+      setTimeout(() => setNotifPermission(Notification.permission), 1500);
     }
   };
 
@@ -239,6 +290,8 @@ function AdminPage() {
       <Header />
       <Toaster richColors />
       <main className="container mx-auto px-4 py-6 space-y-6">
+
+        {/* Header row */}
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div>
             <h1 className="font-display text-3xl font-bold">Admin Dashboard</h1>
@@ -248,15 +301,15 @@ function AdminPage() {
           {/* 🔔 Notification controls */}
           <div className="flex items-center gap-2 flex-wrap">
 
-            {/* Browser notification permission button */}
+            {/* Browser push notification button */}
             {"Notification" in window && (
               <button
                 onClick={handleNotifToggle}
                 title={
                   notifPermission === "granted"
-                    ? "Browser notifications enabled"
+                    ? "Browser notifications are ON"
                     : notifPermission === "denied"
-                    ? "Browser notifications blocked — enable in browser settings"
+                    ? "Notifications blocked — enable in browser settings"
                     : "Click to enable browser notifications"
                 }
                 className={`flex items-center gap-2 px-3 py-2 rounded-xl border-2 text-sm font-medium transition-all ${
@@ -268,27 +321,19 @@ function AdminPage() {
                 }`}
               >
                 {notifPermission === "granted" ? (
-                  <>
-                    <Bell className="h-4 w-4" />
-                    <span className="hidden sm:inline">Notif. On</span>
-                  </>
+                  <><Bell className="h-4 w-4" /><span className="hidden sm:inline">Notif. On</span></>
                 ) : notifPermission === "denied" ? (
-                  <>
-                    <BellOff className="h-4 w-4" />
-                    <span className="hidden sm:inline">Notif. Blocked</span>
-                  </>
+                  <><BellOff className="h-4 w-4" /><span className="hidden sm:inline">Notif. Blocked</span></>
                 ) : (
-                  <>
-                    <Bell className="h-4 w-4 animate-bounce" />
-                    <span className="hidden sm:inline">Enable Notifs</span>
-                  </>
+                  <><Bell className="h-4 w-4 animate-bounce" /><span className="hidden sm:inline">Enable Notifs</span></>
                 )}
               </button>
             )}
 
-            {/* Sound toggle */}
+            {/* ✅ Sound toggle — also unlocks audio on click */}
             <button
               onClick={() => {
+                unlockAudio(); // unlock on this interaction
                 setSoundEnabled(v => !v);
                 toast(soundEnabled ? "🔕 Order sound muted" : "🔔 Order sound enabled");
               }}
@@ -304,7 +349,7 @@ function AdminPage() {
           </div>
         </div>
 
-        {/* Browser notification permission banner */}
+        {/* Banner: ask for notification permission if not yet answered */}
         {"Notification" in window && notifPermission === "default" && (
           <div className="flex items-center justify-between gap-3 rounded-xl border-2 border-amber-200 bg-amber-50 px-4 py-3">
             <div className="flex items-center gap-2 text-amber-800">
@@ -318,7 +363,9 @@ function AdminPage() {
               className="shrink-0 bg-amber-600 hover:bg-amber-700 text-white"
               onClick={() => {
                 requestNotificationPermission();
-                setTimeout(() => setNotifPermission(Notification.permission), 1000);
+                setTimeout(() => {
+                  if ("Notification" in window) setNotifPermission(Notification.permission);
+                }, 1500);
               }}
             >
               Enable
@@ -328,11 +375,11 @@ function AdminPage() {
 
         {/* Analytics Cards */}
         <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-          <AnalyticCard icon={<Package className="h-5 w-5" />}     label="Total Orders"  value={todayOrders.length}                          color="text-primary"    bg="bg-primary/10" />
-          <AnalyticCard icon={<Clock className="h-5 w-5" />}       label="Pending"       value={pendingOrders.length + outForDelivery.length} color="text-amber-600"  bg="bg-amber-50" />
-          <AnalyticCard icon={<CheckCircle className="h-5 w-5" />} label="Delivered"     value={deliveredOrders.length}                      color="text-emerald-600" bg="bg-emerald-50" />
-          <AnalyticCard icon={<IndianRupee className="h-5 w-5" />} label="Revenue"       value={`₹${todayRevenue}`}                          color="text-primary"    bg="bg-primary/10" />
-          <AnalyticCard icon={<TrendingUp className="h-5 w-5" />}  label="Pending Rev."  value={`₹${pendingRevenue}`}                        color="text-amber-600"  bg="bg-amber-50" />
+          <AnalyticCard icon={<Package className="h-5 w-5" />}     label="Total Orders"  value={todayOrders.length}                          color="text-primary"     bg="bg-primary/10" />
+          <AnalyticCard icon={<Clock className="h-5 w-5" />}       label="Pending"       value={pendingOrders.length + outForDelivery.length} color="text-amber-600"   bg="bg-amber-50" />
+          <AnalyticCard icon={<CheckCircle className="h-5 w-5" />} label="Delivered"     value={deliveredOrders.length}                       color="text-emerald-600" bg="bg-emerald-50" />
+          <AnalyticCard icon={<IndianRupee className="h-5 w-5" />} label="Revenue"       value={`₹${todayRevenue}`}                           color="text-primary"     bg="bg-primary/10" />
+          <AnalyticCard icon={<TrendingUp className="h-5 w-5" />}  label="Pending Rev."  value={`₹${pendingRevenue}`}                         color="text-amber-600"   bg="bg-amber-50" />
         </div>
 
         {/* Admin Nav */}
@@ -350,7 +397,7 @@ function AdminPage() {
           ))}
         </div>
 
-        {/* Orders Section */}
+        {/* ── Orders Section ── */}
         {activeSection === "orders" && (
           <div className="space-y-4">
             <div className="flex justify-end">
@@ -384,7 +431,9 @@ function AdminPage() {
                   }, {} as Record<string, typeof pendingOrders>)
                 ).map(([area, orders]) => (
                   <div key={area} className="space-y-3">
-                    <h3 className="font-semibold text-lg border-b pb-1 mt-4">{area} <span className="text-muted-foreground text-sm font-normal">({orders.length})</span></h3>
+                    <h3 className="font-semibold text-lg border-b pb-1 mt-4">
+                      {area} <span className="text-muted-foreground text-sm font-normal">({orders.length})</span>
+                    </h3>
                     {orders.map((o) => (
                       <OrderCard key={o.orderNo} order={o} onStatus={setOrderStatus} />
                     ))}
@@ -447,7 +496,7 @@ function AdminPage() {
           </div>
         )}
 
-        {/* Menu Management */}
+        {/* ── Menu Management ── */}
         {activeSection === "menu" && (
           <Card>
             <CardHeader>
@@ -501,7 +550,7 @@ function AdminPage() {
           </Card>
         )}
 
-        {/* Areas Management */}
+        {/* ── Areas Management ── */}
         {activeSection === "areas" && (
           <Card>
             <CardHeader>
@@ -531,12 +580,12 @@ function AdminPage() {
           </Card>
         )}
 
-        {/* Timings Management */}
+        {/* ── Timings ── */}
         {activeSection === "timings" && (
           <TimingsSection settings={state.settings} onSave={updateSettings} />
         )}
 
-        {/* All History */}
+        {/* ── All History ── */}
         {activeSection === "history" && (
           <Card>
             <CardHeader className="flex flex-row items-start justify-between gap-4">
@@ -577,6 +626,9 @@ function AdminPage() {
   );
 }
 
+// ─────────────────────────────────────────────
+// SUB-COMPONENTS
+// ─────────────────────────────────────────────
 function OrderCard({ order: o, onStatus }: { order: any; onStatus: (dateKey: string, orderNo: number, status: any) => void }) {
   return (
     <div className="border-2 rounded-xl p-4 space-y-3 bg-card hover:shadow-sm transition-shadow">
