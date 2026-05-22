@@ -24,7 +24,9 @@ const userSchema = new mongoose.Schema({
   address: { type: String, default: '' },
   phone: { type: String, default: '' }
 });
-const User = mongoose.models.User || mongoose.model('User', userSchema);
+const User = (() => {
+  try { return mongoose.model('User'); } catch { return mongoose.model('User', userSchema); }
+})();
 
 // Product Schema
 const productSchema = new mongoose.Schema({
@@ -38,14 +40,18 @@ const productSchema = new mongoose.Schema({
   category: { type: String, required: true },
   count: { type: Number, default: 0 }
 });
-const Product = mongoose.models.Product || mongoose.model('Product', productSchema);
+const Product = (() => {
+  try { return mongoose.model('Product'); } catch { return mongoose.model('Product', productSchema); }
+})();
 
 // Area Schema
 const areaSchema = new mongoose.Schema({
   id: { type: String, required: true, unique: true },
   name: { type: String, required: true }
 });
-const Area = mongoose.models.Area || mongoose.model('Area', areaSchema);
+const Area = (() => {
+  try { return mongoose.model('Area'); } catch { return mongoose.model('Area', areaSchema); }
+})();
 
 // Settings Schema  ← NEW
 const settingsSchema = new mongoose.Schema({
@@ -53,7 +59,13 @@ const settingsSchema = new mongoose.Schema({
   orderStartTime: { type: String, default: "06:00" },
   routeCutoffTime: { type: String, default: "11:15" },
 });
-const Settings = mongoose.models.Settings || mongoose.model('Settings', settingsSchema);
+const Settings = (() => {
+  try {
+    return mongoose.model('Settings');
+  } catch {
+    return mongoose.model('Settings', settingsSchema);
+  }
+})();
 
 // Order Schema
 const orderSchema = new mongoose.Schema({
@@ -80,7 +92,9 @@ const orderSchema = new mongoose.Schema({
   deliveredAt: { type: Number },
   dateKey: { type: String, required: true }
 });
-const Order = mongoose.models.Order || mongoose.model('Order', orderSchema);
+const Order = (() => {
+  try { return mongoose.model('Order'); } catch { return mongoose.model('Order', orderSchema); }
+})();
 
 
 // MongoDB connection handler for Vercel serverless
