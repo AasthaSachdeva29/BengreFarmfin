@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import { Toaster } from "@/components/ui/sonner";
-import { Plus, Minus, Truck, Clock, Smartphone, CheckCircle2, Download } from "lucide-react";
+import { Plus, Minus, Truck, Clock, Smartphone, CheckCircle2, Download, Loader2 } from "lucide-react";
 
 export const Route = createFileRoute("/cart")({
   component: CartPage,
@@ -37,6 +37,7 @@ function CartPage() {
   const [selectedAreaId, setSelectedAreaId] = useState<string>("");
   const [fullAddress, setFullAddress] = useState(currentUser?.address || "");
   const [placedOrder, setPlacedOrder] = useState<any>(null);
+  const [isPlacing, setIsPlacing] = useState(false); // ✅ loading state
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -73,8 +74,8 @@ function CartPage() {
 
       const now = new Date();
       const totalMinutes = now.getHours() * 60 + now.getMinutes();
-      const startMinutes = 6 * 60;        // 6:00 AM = 360 mins
-      const endMinutes = 15 * 60 + 15;    // 11:15 AM = 675 mins
+      const startMinutes = 6 * 60;
+      const endMinutes = 11 * 60 + 15;
 
       if (totalMinutes < startMinutes) return { ok: false, msg: "Daily Route opens at 6:00 AM. Please come back later." };
       if (totalMinutes >= endMinutes) return { ok: false, msg: "Daily Route closed (after 11:15 AM). Use Personal Delivery." };
@@ -87,6 +88,24 @@ function CartPage() {
 
   const validation = getOrderValidation();
 
+  // ✅ Shared function to finalize order after payment
+  const finalizeOrder = async (method: PaymentMethod) => {
+    setIsPlacing(true);
+    try {
+      const r = await placeOrder(currentUser.id, items, method, deliveryType, fullAddress, selectedAreaId);
+      if (!r.ok) {
+        toast.error(r.error || "Failed to place order. Please contact support.");
+        return;
+      }
+      clearCart();
+      setPlacedOrder(r.order);
+    } catch (err: any) {
+      toast.error("Something went wrong. Please contact support.");
+    } finally {
+      setIsPlacing(false);
+    }
+  };
+
   const handlePlace = async () => {
     const v = getOrderValidation();
     if (!v.ok) return toast.error(v.msg);
@@ -95,7 +114,7 @@ function CartPage() {
       const res = await loadRazorpay();
       if (!res) return toast.error("Razorpay SDK failed to load. Are you online?");
 
-      toast.loading("Setting up secure payment...");
+      setIsPlacing(true);
       let orderId = "";
       try {
         const orderRes = await fetch("/api/create-order", {
@@ -104,13 +123,13 @@ function CartPage() {
           body: JSON.stringify({ amount: grandTotal }),
         });
         const orderData = await orderRes.json();
-        toast.dismiss();
-        if (!orderData.ok) throw new Error(orderData.error || "Failed to create order");
+        if (!orderData.ok) throw new Error(orderData.error || "Failed to create payment order");
         orderId = orderData.order.id;
       } catch (err: any) {
-        toast.dismiss();
+        setIsPlacing(false);
         return toast.error(err.message || "Could not setup payment");
       }
+      setIsPlacing(false);
 
       const options = {
         key: RAZORPAY_KEY,
@@ -120,10 +139,13 @@ function CartPage() {
         description: "Fresh Dairy Delivery",
         order_id: orderId,
         handler: async function (response: any) {
-          const r = await placeOrder(currentUser.id, items, paymentMethod, deliveryType, fullAddress, selectedAreaId);
-          if (!r.ok) return toast.error(r.error || "Failed to place order");
-          setPlacedOrder(r.order);
-          toast.success(`Order #${r.order!.orderNo} placed successfully! 🎉`);
+          // ✅ Payment done — now save order to DB and show confirmation
+          await finalizeOrder("gpay");
+        },
+        modal: {
+          ondismiss: function() {
+            toast.error("Payment cancelled. Your order was not placed.");
+          }
         },
         prefill: {
           name: currentUser.name,
@@ -135,13 +157,11 @@ function CartPage() {
         },
       };
 
-      const rzp = new window.Razorpay(options);
+      const rzp = new (window as any).Razorpay(options);
       rzp.open();
     } else {
-      const r = await placeOrder(currentUser.id, items, paymentMethod, deliveryType, fullAddress, selectedAreaId);
-      if (!r.ok) return toast.error(r.error || "Failed to place order");
-      setPlacedOrder(r.order);
-      toast.success(`Order #${r.order!.orderNo} placed! 🎉`);
+      // COD
+      await finalizeOrder("cod");
     }
   };
 
@@ -183,20 +203,54 @@ Thank you for ordering fresh from Bengre Farm!`;
       <Header />
       <Toaster richColors />
       <main className="container mx-auto px-4 py-6 max-w-2xl">
+
+        {/* ✅ ORDER CONFIRMATION SCREEN */}
         {placedOrder ? (
-          <Card className="text-center py-10 shadow-warm">
+          <Card className="text-center py-10 shadow-warm animate-in fade-in duration-500">
             <CardContent className="space-y-6">
-              <CheckCircle2 className="h-16 w-16 mx-auto text-emerald-500 mb-4" />
-              <h2 className="font-display text-3xl font-bold text-emerald-700">Order Placed!</h2>
-              <p className="text-muted-foreground">Your order #{placedOrder.orderNo} has been successfully placed. Our delivery partner will reach you soon.</p>
-              
-              <div className="bg-muted p-4 rounded-xl text-left space-y-2 max-w-sm mx-auto">
-                <div className="flex justify-between text-sm"><span>Order Number:</span> <strong>#{placedOrder.orderNo}</strong></div>
-                <div className="flex justify-between text-sm"><span>Amount Paid:</span> <strong>₹{placedOrder.grandTotal}</strong></div>
-                <div className="flex justify-between text-sm"><span>Payment Mode:</span> <strong className="uppercase">{placedOrder.paymentMethod}</strong></div>
+              <div className="flex justify-center">
+                <div className="rounded-full bg-emerald-100 p-4">
+                  <CheckCircle2 className="h-16 w-16 text-emerald-500" />
+                </div>
+              </div>
+              <div>
+                <h2 className="font-display text-3xl font-bold text-emerald-700">Order Placed! 🎉</h2>
+                <p className="text-muted-foreground mt-2">
+                  {placedOrder.paymentMethod === "gpay"
+                    ? "Payment successful! Your order has been confirmed."
+                    : "Your order has been placed successfully!"}
+                </p>
+                <p className="text-sm text-muted-foreground mt-1">Our delivery partner will reach you soon.</p>
               </div>
 
-              <div className="flex flex-col sm:flex-row gap-3 justify-center pt-4">
+              <div className="bg-emerald-50 border border-emerald-200 p-4 rounded-xl text-left space-y-3 max-w-sm mx-auto">
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Order Number</span>
+                  <strong className="text-emerald-700">#{placedOrder.orderNo}</strong>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Date</span>
+                  <strong>{placedOrder.dateKey}</strong>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Amount</span>
+                  <strong>₹{placedOrder.grandTotal}</strong>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Payment</span>
+                  <strong className="uppercase">{placedOrder.paymentMethod === "gpay" ? "UPI / Online ✅" : "Cash on Delivery"}</strong>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Delivery</span>
+                  <strong>{placedOrder.deliveryType === "daily_route" ? "Daily Route" : "Personal Delivery"}</strong>
+                </div>
+                <div className="border-t pt-2">
+                  <p className="text-xs text-muted-foreground">Delivering to:</p>
+                  <p className="text-sm font-medium">{placedOrder.address}</p>
+                </div>
+              </div>
+
+              <div className="flex flex-col sm:flex-row gap-3 justify-center pt-2">
                 <Button onClick={handleDownloadReceipt} variant="outline" className="border-primary text-primary hover:bg-primary/5">
                   <Download className="h-4 w-4 mr-2" /> Download Receipt
                 </Button>
@@ -206,6 +260,7 @@ Thank you for ordering fresh from Bengre Farm!`;
               </div>
             </CardContent>
           </Card>
+
         ) : items.length === 0 ? (
           <Card className="text-center py-16 shadow-warm">
             <CardContent>
@@ -217,6 +272,7 @@ Thank you for ordering fresh from Bengre Farm!`;
               </Link>
             </CardContent>
           </Card>
+
         ) : (
           <div className="space-y-6">
             <div className="mb-2">
@@ -246,7 +302,7 @@ Thank you for ordering fresh from Bengre Farm!`;
                     </div>
                   ))}
                 </div>
-                
+
                 <div className="border-t pt-4 space-y-2">
                   <div className="flex justify-between text-sm text-muted-foreground">
                     <span>Subtotal</span><span>₹{subtotal}</span>
@@ -338,9 +394,19 @@ Thank you for ordering fresh from Bengre Farm!`;
                   <button onClick={() => setPaymentMethod("cod")} className={`flex-1 py-3 text-sm font-bold rounded ${paymentMethod === "cod" ? "bg-white shadow-sm text-primary" : "text-muted-foreground"}`}>Cash on Delivery</button>
                   <button onClick={() => setPaymentMethod("gpay")} className={`flex-1 py-3 text-sm font-bold rounded ${paymentMethod === "gpay" ? "bg-white shadow-sm text-primary" : "text-muted-foreground"}`}>UPI / Online</button>
                 </div>
-                
-                <Button onClick={handlePlace} disabled={!validation.ok} className="w-full h-14 text-lg bg-gradient-primary hover:opacity-90 font-bold shadow-lg">
-                  Place Order · ₹{grandTotal}
+
+                <Button
+                  onClick={handlePlace}
+                  disabled={!validation.ok || isPlacing}
+                  className="w-full h-14 text-lg bg-gradient-primary hover:opacity-90 font-bold shadow-lg"
+                >
+                  {isPlacing ? (
+                    <span className="flex items-center gap-2">
+                      <Loader2 className="h-5 w-5 animate-spin" /> Placing Order...
+                    </span>
+                  ) : (
+                    `Place Order · ₹${grandTotal}`
+                  )}
                 </Button>
                 {!validation.ok && items.length > 0 && (
                   <p className="text-xs text-center text-destructive bg-destructive/5 p-2 rounded-md animate-pulse">{validation.msg}</p>
