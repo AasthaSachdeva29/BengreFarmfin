@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { Header } from "@/components/Header";
-import { useStore } from "@/lib/store";
+import { useStore, type StoreSettings } from "@/lib/store";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,11 +18,11 @@ export const Route = createFileRoute("/admin")({
 });
 
 function AdminPage() {
-  const { currentUser, state, addMenuItem, updateMenuItem, removeMenuItem, setOrderStatus, todayKey, addArea, removeArea } = useStore();
+  const { currentUser, state, addMenuItem, updateMenuItem, removeMenuItem, setOrderStatus, todayKey, addArea, removeArea, updateSettings } = useStore();
   const navigate = useNavigate();
   const [newItem, setNewItem] = useState({ name: "", price: 0, unit: "litre", category: "", description: "", available: true, count: 0 });
   const [newArea, setNewArea] = useState({ name: "" });
-  const [activeSection, setActiveSection] = useState<"orders" | "menu" | "areas" | "history">("orders");
+  const [activeSection, setActiveSection] = useState<"orders" | "menu" | "areas" | "timings" | "history">("orders");
 
   useEffect(() => {
     if (currentUser && currentUser.role !== "admin") navigate({ to: "/" });
@@ -101,8 +101,8 @@ function AdminPage() {
         </div>
 
         {/* Admin Nav */}
-        <div className="flex gap-2 border-b pb-3">
-          {(["orders", "menu", "areas", "history"] as const).map((s) => (
+        <div className="flex gap-2 flex-wrap border-b pb-3">
+          {(["orders", "menu", "areas", "timings", "history"] as const).map((s) => (
             <Button
               key={s}
               variant={activeSection === s ? "default" : "ghost"}
@@ -110,7 +110,15 @@ function AdminPage() {
               onClick={() => setActiveSection(s)}
               className={activeSection === s ? "bg-gradient-primary" : ""}
             >
-              {s === "orders" ? "Today's Orders" : s === "menu" ? "Manage Menu" : s === "areas" ? "Route Areas" : "All History"}
+              {s === "orders"
+                ? "Today's Orders"
+                : s === "menu"
+                ? "Manage Menu"
+                : s === "areas"
+                ? "Route Areas"
+                : s === "timings"
+                ? "Order Timings"
+                : "All History"}
             </Button>
           ))}
         </div>
@@ -225,11 +233,11 @@ function AdminPage() {
                   <div className="flex items-center gap-3">
                     <div className="flex flex-col items-center">
                       <Label className="text-[10px] mb-1">Stock Count</Label>
-                      <Input 
-                        type="number" 
-                        value={m.count ?? 0} 
+                      <Input
+                        type="number"
+                        value={m.count ?? 0}
                         onChange={(e) => updateMenuItem(m.id, { count: Number(e.target.value) })}
-                        className="w-20 h-8 text-center" 
+                        className="w-20 h-8 text-center"
                       />
                     </div>
                     <div className="flex flex-col items-center">
@@ -291,6 +299,11 @@ function AdminPage() {
               </div>
             </CardContent>
           </Card>
+        )}
+
+        {/* Timings Management */}
+        {activeSection === "timings" && (
+          <TimingsSection settings={state.settings} onSave={updateSettings} />
         )}
 
         {/* All History */}
@@ -358,7 +371,7 @@ function OrderCard({ order: o, onStatus }: { order: any; onStatus: (dateKey: str
           </div>
         ))}
         {o.deliveryCharge > 0 && (
-           <div className="flex justify-between border-t border-muted-foreground/20 pt-1 mt-1 text-xs">
+          <div className="flex justify-between border-t border-muted-foreground/20 pt-1 mt-1 text-xs">
             <span>Delivery Charge</span>
             <span className="font-medium">₹{o.deliveryCharge}</span>
           </div>
@@ -394,6 +407,93 @@ function AnalyticCard({ icon, label, value, color, bg }: { icon: React.ReactNode
           <div className="text-xs text-muted-foreground font-medium uppercase tracking-wider">{label}</div>
           <div className="text-xl font-bold">{value}</div>
         </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function TimingsSection({
+  settings,
+  onSave,
+}: {
+  settings: StoreSettings;
+  onSave: (s: StoreSettings) => Promise<void>;
+}) {
+  const [start, setStart] = useState(settings.orderStartTime);
+  const [cutoff, setCutoff] = useState(settings.routeCutoffTime);
+
+  // Keep local state in sync if settings load after initial render
+  useEffect(() => {
+    setStart(settings.orderStartTime);
+    setCutoff(settings.routeCutoffTime);
+  }, [settings.orderStartTime, settings.routeCutoffTime]);
+
+  const fmt12 = (t: string) => {
+    const [h, m] = t.split(":").map(Number);
+    const ampm = h >= 12 ? "PM" : "AM";
+    return `${h % 12 || 12}:${String(m).padStart(2, "0")} ${ampm}`;
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="font-display flex items-center gap-2">
+          <Clock className="h-5 w-5 text-amber-600" /> Order Window Timings
+        </CardTitle>
+        <CardDescription>
+          Set when customers can place orders each day. Changes take effect immediately for all users.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-6 max-w-sm">
+        <div className="space-y-2">
+          <Label>Opening Time</Label>
+          <Input
+            type="time"
+            value={start}
+            onChange={(e) => setStart(e.target.value)}
+            className="h-11"
+          />
+          {start && (
+            <p className="text-xs text-muted-foreground">Orders will open at <strong>{fmt12(start)}</strong></p>
+          )}
+        </div>
+        <div className="space-y-2">
+          <Label>Closing Time (Order Cutoff)</Label>
+          <Input
+            type="time"
+            value={cutoff}
+            onChange={(e) => setCutoff(e.target.value)}
+            className="h-11"
+          />
+          {cutoff && (
+            <p className="text-xs text-muted-foreground">Orders will close at <strong>{fmt12(cutoff)}</strong></p>
+          )}
+        </div>
+
+        {/* Live preview */}
+        <div className="rounded-xl border-2 border-primary/10 bg-primary/5 p-4 space-y-1">
+          <p className="text-xs font-bold text-primary uppercase tracking-wider mb-2">Current Window Preview</p>
+          <div className="flex items-center justify-between text-sm">
+            <span className="text-muted-foreground">Opens</span>
+            <span className="font-semibold">{fmt12(start || "06:00")}</span>
+          </div>
+          <div className="flex items-center justify-between text-sm">
+            <span className="text-muted-foreground">Closes</span>
+            <span className="font-semibold">{fmt12(cutoff || "11:15")}</span>
+          </div>
+        </div>
+
+        <Button
+          className="w-full bg-gradient-primary hover:opacity-90 h-11"
+          onClick={async () => {
+            if (!start || !cutoff) return toast.error("Both times are required");
+            if (start >= cutoff) return toast.error("Opening time must be before closing time");
+            await onSave({ orderStartTime: start, routeCutoffTime: cutoff });
+            toast.success("Timings updated successfully!");
+          }}
+        >
+          Save Timings
+        </Button>
       </CardContent>
     </Card>
   );
