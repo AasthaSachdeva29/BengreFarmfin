@@ -50,15 +50,13 @@ function ShopPage() {
     return () => clearInterval(interval);
   }, [state.settings]);
 
-  // ✅ Only redirect AFTER hydration is complete — prevents refresh logout bug
+  // Redirect only if not logged in — currentUser is now available instantly from localStorage
   useEffect(() => {
-    if (!state.hydrated) return; // wait for initial fetch to finish
     if (!currentUser) navigate({ to: "/login" });
     else if (currentUser.role !== "user") navigate({ to: currentUser.role === "admin" ? "/admin" : "/delivery" });
-  }, [state.hydrated, currentUser, navigate]);
+  }, [currentUser, navigate]);
 
-  // Show blank header while hydrating (avoids flash of login page)
-  if (!state.hydrated || !currentUser || currentUser.role !== "user") {
+  if (!currentUser || currentUser.role !== "user") {
     return <div className="min-h-screen bg-gradient-warm"><Header /></div>;
   }
 
@@ -124,7 +122,7 @@ Thank you for ordering fresh from Bengre Farm!`;
           )}
         </div>
 
-        {/* Order timing banner — only shown on menu tab */}
+        {/* Order timing banner */}
         {activeTab === "menu" && (
           <>
             {routeStatus === "open" && (
