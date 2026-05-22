@@ -74,7 +74,7 @@ function CartPage() {
       const now = new Date();
       const totalMinutes = now.getHours() * 60 + now.getMinutes();
       const startMinutes = 6 * 60;        // 6:00 AM = 360 mins
-      const endMinutes = 11 * 60 + 15;    // 11:15 AM = 675 mins
+      const endMinutes = 15 * 60 + 15;    // 11:15 AM = 675 mins
 
       if (totalMinutes < startMinutes) return { ok: false, msg: "Daily Route opens at 6:00 AM. Please come back later." };
       if (totalMinutes >= endMinutes) return { ok: false, msg: "Daily Route closed (after 11:15 AM). Use Personal Delivery." };
