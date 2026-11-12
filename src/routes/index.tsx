@@ -2,14 +2,11 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { Logo } from "@/components/Logo";
 import { Header } from "@/components/Header";
 import { useStore, type MenuItem } from "@/lib/store";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Truck, ShieldCheck, Clock, Leaf, Heart, ShoppingCart, MessageCircle, MapPin, ChevronRight, Smartphone, Package, X } from "lucide-react";
-import { useState, useMemo } from "react";
-import { toast } from "sonner";
-import { Toaster } from "@/components/ui/sonner";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Truck, ShieldCheck, Clock, Leaf, Heart, MessageCircle, MapPin, ChevronRight, Smartphone } from "lucide-react";
+import { useMemo } from "react";
 
 export const Route = createFileRoute("/")({
   component: HomePage,
@@ -30,11 +27,11 @@ function formatTime(t: string) {
 }
 
 function HomePage() {
-  const { currentUser, state, setCartQty } = useStore();
+  const { currentUser, state } = useStore();
   const navigate = useNavigate();
 
   // ✅ Pull live settings from store
-  const { orderStartTime, routeCutoffTime } = state.settings;
+  const { routeCutoffTime } = state.settings;
 
   const groupedMenu = useMemo(() => {
     const groups: Record<string, MenuItem[]> = {};
@@ -44,34 +41,6 @@ function HomePage() {
     });
     return groups;
   }, [state.menu]);
-
-  const [selectedVariants, setSelectedVariants] = useState<Record<string, string>>({});
-
-  const getSelectedId = (category: string, items: MenuItem[]) =>
-    selectedVariants[category] || items[0].id;
-
-  const handleAddToCart = (category: string, items: MenuItem[]) => {
-    const itemId = getSelectedId(category, items);
-    const item = state.menu.find(m => m.id === itemId);
-    if (!item) return;
-    const currentQty = state.cart[itemId] || 0;
-    if (currentQty >= item.count) {
-      toast.error(`Only ${item.count} left in stock!`);
-      return;
-    }
-    setCartQty(itemId, currentQty + 1);
-    toast.success(`Added ${item.name} (${item.unit}) to cart`, {
-      action: currentUser
-        ? { label: "Checkout", onClick: () => navigate({ to: "/shop" }) }
-        : { label: "Login to order", onClick: () => navigate({ to: "/login" }) },
-    });
-  };
-
-  const cartItems = Object.entries(state.cart)
-    .map(([id, qty]) => ({ item: state.menu.find(m => m.id === id), qty }))
-    .filter(i => i.item && i.qty > 0);
-
-  const cartTotal = cartItems.reduce((acc, { item, qty }) => acc + (item?.price || 0) * qty, 0);
 
   return (
     <div className="min-h-screen bg-gradient-warm">
@@ -132,133 +101,6 @@ function HomePage() {
           </div>
         </section>
 
-        {/* Quick Order Section */}
-        <section id="quick-order" className="py-16 bg-white/50 border-b">
-          <div className="container mx-auto px-4">
-            <Toaster richColors />
-            <div className="text-center mb-12">
-              <Badge variant="outline" className="mb-4 py-1 px-3 border-primary/20 text-primary uppercase tracking-widest text-[10px]">Fresh Selection</Badge>
-              <h2 className="font-display text-4xl font-bold text-foreground">Add to Cart</h2>
-              <p className="text-muted-foreground mt-2 max-w-2xl mx-auto">
-                Quickly add your daily essentials with flexible size options.
-              </p>
-            </div>
-
-            <div className="grid gap-6 lg:grid-cols-3 xl:grid-cols-4 max-w-7xl mx-auto">
-              <div className="lg:col-span-2 xl:col-span-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                {Object.entries(groupedMenu).map(([category, items]) => {
-                  const selectedId = getSelectedId(category, items);
-                  const selectedItem = items.find(i => i.id === selectedId) || items[0];
-                  return (
-                    <Card key={category} className={`border-2 transition-colors shadow-sm bg-card ${selectedItem.count <= 0 ? "opacity-50 grayscale border-destructive/20" : "hover:border-primary/40"}`}>
-                      <CardContent className="p-5 flex flex-col justify-between h-full space-y-4">
-                        <div>
-                          <h3 className="font-display font-bold text-lg mb-1">{category}</h3>
-                          <div className="text-2xl font-display font-black text-primary">₹{selectedItem.price}</div>
-                          {selectedItem.count > 0 ? (
-                            <div className="text-xs text-amber-600 font-semibold mt-1">{selectedItem.count} left in stock</div>
-                          ) : (
-                            <div className="text-xs text-destructive font-semibold mt-1">Out of stock</div>
-                          )}
-                        </div>
-
-                        {items.length > 1 ? (
-                          <div className="space-y-1.5">
-                            <label className="text-[10px] font-bold uppercase text-muted-foreground">Select Size</label>
-                            <Select value={selectedId} onValueChange={(val) => setSelectedVariants(prev => ({ ...prev, [category]: val }))}>
-                              <SelectTrigger className="h-10 w-full border-primary/10">
-                                <SelectValue><span>{selectedItem.unit} — ₹{selectedItem.price}</span></SelectValue>
-                              </SelectTrigger>
-                              <SelectContent>
-                                {items.map(item => (
-                                  <SelectItem key={item.id} value={item.id}>{item.unit} — ₹{item.price}</SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </div>
-                        ) : (
-                          <div className="h-[58px] flex items-end">
-                            <Badge variant="secondary" className="text-xs font-semibold">{selectedItem.unit}</Badge>
-                          </div>
-                        )}
-
-                        <Button
-                          onClick={() => handleAddToCart(category, items)}
-                          disabled={!selectedItem.available || selectedItem.count <= 0}
-                          className="w-full bg-gradient-primary hover:opacity-90 gap-2 h-11 font-bold shadow-sm"
-                        >
-                          <ShoppingCart className="h-4 w-4" /> {selectedItem.count <= 0 ? "Out of Stock" : "Add to Cart"}
-                        </Button>
-                      </CardContent>
-                    </Card>
-                  );
-                })}
-              </div>
-
-              {/* Mini Cart */}
-              <div className="lg:col-span-1" id="mini-cart">
-                <Card className="border-2 border-primary/20 shadow-warm lg:sticky lg:top-24">
-                  <CardHeader className="pb-3 border-b">
-                    <CardTitle className="flex items-center gap-2 text-lg">
-                      <ShoppingCart className="h-5 w-5 text-primary" /> Your Cart
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="p-0">
-                    {cartItems.length === 0 ? (
-                      <div className="p-8 text-center text-muted-foreground">
-                        <Package className="h-10 w-10 mx-auto mb-2 opacity-20" />
-                        <p className="text-sm">Your cart is empty.</p>
-                      </div>
-                    ) : (
-                      <div className="divide-y max-h-[300px] overflow-auto">
-                        {cartItems.map(({ item, qty }) => (
-                          <div key={item!.id} className="p-3 flex items-center gap-2 bg-white/40">
-                            <div className="flex-1 min-w-0">
-                              <div className="font-bold text-sm truncate">{item!.name}</div>
-                              <div className="text-xs text-muted-foreground">{item!.unit} · ₹{item!.price} × {qty}</div>
-                            </div>
-                            <div className="font-bold text-primary shrink-0">₹{item!.price * qty}</div>
-                            <button
-                              onClick={() => setCartQty(item!.id, 0)}
-                              className="shrink-0 h-6 w-6 rounded-full flex items-center justify-center text-muted-foreground hover:text-red-500 hover:bg-red-50 transition-colors"
-                              aria-label="Remove item"
-                            >
-                              <X className="h-3.5 w-3.5" />
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                    <div className="p-4 bg-muted/30 border-t space-y-4">
-                      <div className="flex justify-between items-center font-bold">
-                        <span>Total</span>
-                        <span className="text-xl text-primary">₹{cartTotal}</span>
-                      </div>
-                      {!currentUser ? (
-                        <div className="space-y-2 pt-2 border-t border-primary/10">
-                          <p className="text-[10px] font-bold text-center text-primary uppercase tracking-wider">Login to Checkout</p>
-                          <div className="grid grid-cols-2 gap-2">
-                            <Button size="sm" onClick={() => navigate({ to: "/login" })} className="bg-primary text-white">Login</Button>
-                            <Button size="sm" onClick={() => navigate({ to: "/signup" })} variant="outline">Sign Up</Button>
-                          </div>
-                        </div>
-                      ) : (
-                        <Button
-                          onClick={() => navigate({ to: "/shop" })}
-                          disabled={cartItems.length === 0}
-                          className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold h-12"
-                        >
-                          Checkout Now →
-                        </Button>
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
-              </div>
-            </div>
-          </div>
-        </section>
-
         {/* Vibes of Village */}
         <section className="py-20 bg-card/30">
           <div className="container mx-auto px-4">
@@ -299,7 +141,7 @@ function HomePage() {
                         <Button
                           variant="link"
                           className="p-0 h-auto text-primary font-bold group gap-2"
-                          onClick={() => document.getElementById('quick-order')?.scrollIntoView({ behavior: 'smooth' })}
+                          onClick={() => navigate({ to: "/shop" })}
                         >
                           Order {category} now <ChevronRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
                         </Button>
