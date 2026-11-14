@@ -33,14 +33,51 @@ export interface OrderItem {
 
 export type OrderStatus = "pending" | "out_for_delivery" | "delivered" | "cancelled";
 export type PaymentMethod = "gpay" | "cod";
-export type DeliveryType = "daily_route" | "personal";
+// "daily_route" and "personal" only exist on old orders
+export type DeliveryType = "morning" | "evening" | "daily_route" | "personal";
+export type Slot = "morning" | "evening";
 
-export const PERSONAL_MIN_ORDER = 180;
-export const PERSONAL_DELIVERY_CHARGE = 50;
+export const SLOT_INFO: Record<Slot, { label: string; time: string; cutoff: string }> = {
+  morning: { label: "Morning Delivery", time: "6 – 8 AM", cutoff: "Order any time until 11:59 PM the night before" },
+  evening: { label: "Evening Delivery", time: "4 – 6 PM", cutoff: "Order until 3:00 PM on the delivery day" },
+};
+
+export const slotText = (t: string) =>
+  t === "morning" ? "Morning delivery (6 – 8 AM)"
+  : t === "evening" ? "Evening delivery (4 – 6 PM)"
+  : t === "personal" ? "Personal delivery"
+  : "Daily route";
+
+// Date and time in India — order cut-offs always follow IST, whatever the device clock says
+export const istNow = () => {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", hour12: false,
+  }).formatToParts(new Date());
+  const g = (t: string) => parts.find((p) => p.type === t)!.value;
+  return {
+    dateKey: `${g("year")}-${g("month")}-${g("day")}`,
+    minutes: (Number(g("hour")) % 24) * 60 + Number(g("minute")),
+  };
+};
+
+// Can an order for this slot on this delivery date still be placed right now?
+export const slotAvailability = (slot: Slot, deliveryDate: string): { ok: boolean; reason?: string } => {
+  const now = istNow();
+  if (deliveryDate < now.dateKey) return { ok: false, reason: "This date has already passed" };
+  if (slot === "morning") {
+    // closes at 11:59 PM of the previous day
+    if (deliveryDate <= now.dateKey) return { ok: false, reason: "Closed – morning orders close at 11:59 PM the night before" };
+    return { ok: true };
+  }
+  // evening: open until 3 PM on the delivery day itself
+  if (deliveryDate === now.dateKey && now.minutes >= 15 * 60) return { ok: false, reason: "Closed – evening orders for today closed at 3:00 PM" };
+  return { ok: true };
+};
 
 export interface StoreSettings {
-  orderStartTime: string;  // "HH:MM" 24hr
-  routeCutoffTime: string; // "HH:MM" 24hr
+  orderStartTime: string;  // "HH:MM" 24hr (no longer used for ordering)
+  routeCutoffTime: string; // "HH:MM" 24hr (no longer used for ordering)
 }
 
 export interface Order {
@@ -60,7 +97,7 @@ export interface Order {
   status: OrderStatus;
   createdAt: number;
   deliveredAt?: number;
-  dateKey: string;
+  dateKey: string; // for new orders this is the DELIVERY date
 }
 
 export interface DeliveryArea {
@@ -78,10 +115,7 @@ interface Store {
   settings: StoreSettings;
 }
 
-const todayKey = () => {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-};
+const todayKey = () => istNow().dateKey;
 
 const LOCAL_KEY = "bengre_store_v4";
 
@@ -138,30 +172,6 @@ const mutate = (fn: (s: Store) => void) => {
   fn(_store);
   persistLocal();
   notify();
-};
-
-// Formats "HH:MM" → "6:00 AM" / "11:15 AM" etc.
-const fmt12 = (t: string) => {
-  const [h, m] = t.split(":").map(Number);
-  const ampm = h >= 12 ? "PM" : "AM";
-  return `${h % 12 || 12}:${String(m).padStart(2, "0")} ${ampm}`;
-};
-
-const isWithinOrderWindow = (): { allowed: boolean; error?: string } => {
-  const now = new Date();
-  const { orderStartTime, routeCutoffTime } = _store.settings;
-
-  const start = new Date();
-  const [sh, sm] = orderStartTime.split(":").map(Number);
-  start.setHours(sh, sm, 0, 0);
-
-  const cutoff = new Date();
-  const [ch, cm] = routeCutoffTime.split(":").map(Number);
-  cutoff.setHours(ch, cm, 0, 0);
-
-  if (now < start) return { allowed: false, error: `Orders open at ${fmt12(orderStartTime)}. Please come back then!` };
-  if (now > cutoff) return { allowed: false, error: `Orders are closed after ${fmt12(routeCutoffTime)}. Please try again tomorrow.` };
-  return { allowed: true };
 };
 
 export function useStore() {
@@ -225,6 +235,32 @@ export function useStore() {
       }
     },
 
+    // Google sign-in / sign-up. First call sends only the Google credential; if the
+    // account is new the server asks for phone + address, and we call again with them.
+    googleAuth: async (credential: string, extra?: { phone: string; address: string }) => {
+      try {
+        const res = await fetch("/api/auth/google", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ credential, ...extra }),
+        });
+        const data = await res.json();
+        if (data.needsProfile) {
+          return { ok: false as const, needsProfile: true as const, profile: data.profile as { name: string; email: string }, error: "" };
+        }
+        if (!data.ok) return { ok: false as const, needsProfile: false as const, error: data.error as string };
+        const u: User = data.user;
+        mutate((s) => {
+          s.currentUserId = u.id;
+          const idx = s.users.findIndex(x => x.id === u.id);
+          if (idx >= 0) s.users[idx] = u; else s.users.push(u);
+        });
+        return { ok: true as const, user: u };
+      } catch {
+        return { ok: false as const, needsProfile: false as const, error: "Google sign-in failed" };
+      }
+    },
+
     signup: async (data: { name: string; email: string; password: string; address: string; phone: string }) => {
       try {
         const res = await fetch("/api/auth/signup", {
@@ -256,9 +292,18 @@ export function useStore() {
 
     clearCart: () => mutate((s) => { s.cart = {}; }),
 
-    placeOrder: async (userId: string, items: OrderItem[], paymentMethod: PaymentMethod, deliveryType: DeliveryType, fullAddress: string, areaId?: string) => {
-      const timeCheck = isWithinOrderWindow();
-      if (!timeCheck.allowed) return { ok: false as const, error: timeCheck.error! };
+    placeOrder: async (
+      userId: string,
+      items: OrderItem[],
+      paymentMethod: PaymentMethod,
+      slot: Slot,
+      deliveryDate: string,
+      fullAddress: string,
+      areaId: string,
+    ) => {
+      const avail = slotAvailability(slot, deliveryDate);
+      if (!avail.ok) return { ok: false as const, error: avail.reason! };
+      if (!areaId) return { ok: false as const, error: "Please select your sector" };
 
       let userName = "User";
       let phone = "";
@@ -266,25 +311,14 @@ export function useStore() {
       if (u) { userName = u.name; phone = u.phone; }
 
       const total = items.reduce((s, i) => s + i.price * i.qty, 0);
-      let deliveryCharge = 0;
-
-      if (deliveryType === "personal") {
-        if (total < PERSONAL_MIN_ORDER) return { ok: false as const, error: `Minimum order for Personal Delivery is ₹${PERSONAL_MIN_ORDER}` };
-        deliveryCharge = PERSONAL_DELIVERY_CHARGE;
-      } else {
-        if (!areaId) return { ok: false as const, error: "Please select your sector for Daily Route delivery" };
-      }
-
-      const grandTotal = total + deliveryCharge;
-      const dateKey = todayKey();
-      const area = deliveryType === "daily_route" ? _store.areas.find(a => a.id === areaId) : null;
+      const area = _store.areas.find(a => a.id === areaId);
 
       const orderPayload = {
         orderNo: 0,
         userId, userName, address: fullAddress, phone,
-        items, total, deliveryCharge, grandTotal, paymentMethod,
-        deliveryAreaId: area?.id, deliveryAreaName: area?.name, deliveryType,
-        dateKey
+        items, total, deliveryCharge: 0, grandTotal: total, paymentMethod,
+        deliveryAreaId: area?.id, deliveryAreaName: area?.name, deliveryType: slot,
+        dateKey: deliveryDate,
       };
 
       try {

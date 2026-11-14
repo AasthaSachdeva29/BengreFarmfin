@@ -1,6 +1,7 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
 import { Logo } from "@/components/Logo";
+import { GoogleButton } from "@/components/GoogleButton";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -15,7 +16,7 @@ export const Route = createFileRoute("/login")({
 });
 
 function LoginPage() {
-  const { login, currentUser } = useStore();
+  const { login, googleAuth, currentUser } = useStore();
   const navigate = useNavigate();
   const [mode, setMode] = useState<"login" | "reset">("login");
   const [email, setEmail] = useState("");
@@ -42,6 +43,21 @@ function LoginPage() {
     toast.success(`Welcome, ${r.user!.name}`);
     const dest = r.user!.role === "admin" ? "/admin" : r.user!.role === "delivery" ? "/delivery" : "/shop";
     navigate({ to: dest });
+  };
+
+  const handleGoogle = async (credential: string) => {
+    setLoading(true);
+    const r = await googleAuth(credential);
+    setLoading(false);
+    if (r.ok) {
+      toast.success(`Welcome, ${r.user.name}`);
+      navigate({ to: "/shop" });
+    } else if (r.needsProfile) {
+      toast.info("No account for this Google email yet — please sign up first.");
+      navigate({ to: "/signup" });
+    } else {
+      toast.error(r.error);
+    }
   };
 
   const handleReset = async (e: React.FormEvent) => {
@@ -141,6 +157,11 @@ function LoginPage() {
                   {loading ? "Logging in..." : "Login"}
                 </Button>
               </form>
+
+              <div className="my-5 flex items-center gap-3 text-xs text-muted-foreground">
+                <div className="h-px flex-1 bg-border" /> or <div className="h-px flex-1 bg-border" />
+              </div>
+              <GoogleButton onCredential={handleGoogle} text="signin_with" />
             </CardContent>
           </Card>
         ) : (

@@ -1,15 +1,16 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { Header } from "@/components/Header";
-import { useStore, type OrderItem, type PaymentMethod, type DeliveryType, PERSONAL_MIN_ORDER, PERSONAL_DELIVERY_CHARGE } from "@/lib/store";
+import { useStore, istNow, slotAvailability, slotText, SLOT_INFO, type OrderItem, type PaymentMethod, type Slot } from "@/lib/store";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Calendar } from "@/components/ui/calendar";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import { Toaster } from "@/components/ui/sonner";
-import { Plus, Minus, Truck, Clock, Smartphone, CheckCircle2, Download, Loader2 } from "lucide-react";
+import { Plus, Minus, Truck, CalendarDays, Sunrise, Sunset, CheckCircle2, Download, Loader2 } from "lucide-react";
 
 export const Route = createFileRoute("/cart")({
   component: CartPage,
@@ -28,33 +29,27 @@ const loadRazorpay = () => {
   });
 };
 
-// ✅ Helper: "11:15" → { h: 11, m: 15, totalMinutes: 675 }
-function parseTime(t: string) {
-  const [h, m] = t.split(":").map(Number);
-  return { h, m, totalMinutes: h * 60 + m };
-}
+const toKey = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+const fromKey = (k: string) => {
+  const [y, m, d] = k.split("-").map(Number);
+  return new Date(y, m - 1, d);
+};
+const prettyDate = (k: string) =>
+  fromKey(k).toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short", year: "numeric" });
 
-// ✅ Helper: "11:15" → "11:15 AM" / "13:00" → "1:00 PM"
-function formatTime(t: string) {
-  const { h, m } = parseTime(t);
-  const period = h >= 12 ? "PM" : "AM";
-  const displayH = h > 12 ? h - 12 : h === 0 ? 12 : h;
-  return `${displayH}:${String(m).padStart(2, "0")} ${period}`;
-}
+const MAX_DAYS_AHEAD = 14;
 
 function CartPage() {
   const { currentUser, state, placeOrder, setCartQty, clearCart } = useStore();
   const navigate = useNavigate();
   const cart = state.cart || {};
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("cod");
-  const [deliveryType, setDeliveryType] = useState<DeliveryType>("daily_route");
+  const [slot, setSlot] = useState<Slot>("morning");
+  const [selectedDate, setSelectedDate] = useState<Date | undefined>(() => fromKey(istNow().dateKey));
   const [selectedAreaId, setSelectedAreaId] = useState<string>("");
   const [fullAddress, setFullAddress] = useState(currentUser?.address || "");
   const [placedOrder, setPlacedOrder] = useState<any>(null);
   const [isPlacing, setIsPlacing] = useState(false);
-
-  // ✅ Pull live settings from store (fetched from /api/settings on load)
-  const { orderStartTime, routeCutoffTime } = state.settings;
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -78,27 +73,19 @@ function CartPage() {
   }, [] as (OrderItem & { count: number })[]);
 
   const subtotal = items.reduce((s, i) => s + i.price * i.qty, 0);
-  const deliveryCharge = deliveryType === "personal" ? PERSONAL_DELIVERY_CHARGE : 0;
-  const grandTotal = subtotal + deliveryCharge;
+  const grandTotal = subtotal; // delivery is free
 
-  // ✅ Validation uses dynamic settings from store
+  const minDate = fromKey(istNow().dateKey);
+  const maxDate = new Date(minDate.getFullYear(), minDate.getMonth(), minDate.getDate() + MAX_DAYS_AHEAD);
+  const dateKey = selectedDate ? toKey(selectedDate) : "";
+
   const getOrderValidation = () => {
     if (items.length === 0) return { ok: false, msg: "Cart is empty" };
-    if (deliveryType === "daily_route") {
-      if (!selectedAreaId) return { ok: false, msg: "Select sector/area" };
-      if (!fullAddress.trim()) return { ok: false, msg: "Enter full address" };
-
-      const now = new Date();
-      const nowMinutes = now.getHours() * 60 + now.getMinutes();
-      const start = parseTime(orderStartTime).totalMinutes;
-      const end   = parseTime(routeCutoffTime).totalMinutes;
-
-      if (nowMinutes < start) return { ok: false, msg: `Daily Route opens at ${formatTime(orderStartTime)}. Come back later.` };
-      if (nowMinutes >= end)  return { ok: false, msg: `Daily Route closed after ${formatTime(routeCutoffTime)}. Use Personal Delivery.` };
-    } else {
-      if (subtotal < PERSONAL_MIN_ORDER) return { ok: false, msg: `Min order ₹${PERSONAL_MIN_ORDER} for Personal` };
-      if (!fullAddress.trim()) return { ok: false, msg: "Enter delivery address" };
-    }
+    if (!dateKey) return { ok: false, msg: "Select a delivery date" };
+    const a = slotAvailability(slot, dateKey);
+    if (!a.ok) return { ok: false, msg: a.reason || "This slot is not available" };
+    if (!selectedAreaId) return { ok: false, msg: "Select sector/area" };
+    if (!fullAddress.trim()) return { ok: false, msg: "Enter full address" };
     return { ok: true, msg: "" };
   };
 
@@ -107,7 +94,7 @@ function CartPage() {
   const finalizeOrder = async (method: PaymentMethod) => {
     setIsPlacing(true);
     try {
-      const r = await placeOrder(currentUser.id, items, method, deliveryType, fullAddress, selectedAreaId);
+      const r = await placeOrder(currentUser.id, items, method, slot, dateKey, fullAddress, selectedAreaId);
       if (!r.ok) {
         toast.error(r.error || "Failed to place order. Please contact support.");
         return;
@@ -182,11 +169,11 @@ function CartPage() {
     const content = `BENGRE FARM - ORDER RECEIPT
 -----------------------------------
 Order No: #${placedOrder.orderNo}
-Date: ${placedOrder.dateKey}
+Delivery Date: ${placedOrder.dateKey}
 Customer: ${placedOrder.userName}
 Phone: ${placedOrder.phone}
 Address: ${placedOrder.address}
-Delivery: ${placedOrder.deliveryType.replace("_", " ")}
+Delivery: ${slotText(placedOrder.deliveryType)}
 Payment: ${placedOrder.paymentMethod.toUpperCase()}
 
 ITEMS:
@@ -231,7 +218,7 @@ Thank you for ordering fresh from Bengre Farm!`;
                     ? "Payment successful! Your order has been confirmed."
                     : "Your order has been placed successfully!"}
                 </p>
-                <p className="text-sm text-muted-foreground mt-1">Our delivery partner will reach you soon.</p>
+                <p className="text-sm text-muted-foreground mt-1">Our delivery partner will reach you in your chosen slot.</p>
               </div>
 
               <div className="bg-emerald-50 border border-emerald-200 p-4 rounded-xl text-left space-y-3 max-w-sm mx-auto">
@@ -240,8 +227,12 @@ Thank you for ordering fresh from Bengre Farm!`;
                   <strong className="text-emerald-700">#{placedOrder.orderNo}</strong>
                 </div>
                 <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Date</span>
-                  <strong>{placedOrder.dateKey}</strong>
+                  <span className="text-muted-foreground">Delivery Date</span>
+                  <strong>{prettyDate(placedOrder.dateKey)}</strong>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Time Slot</span>
+                  <strong>{slotText(placedOrder.deliveryType)}</strong>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-muted-foreground">Amount</span>
@@ -250,10 +241,6 @@ Thank you for ordering fresh from Bengre Farm!`;
                 <div className="flex justify-between text-sm">
                   <span className="text-muted-foreground">Payment</span>
                   <strong className="uppercase">{placedOrder.paymentMethod === "gpay" ? "UPI / Online ✅" : "Cash on Delivery"}</strong>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Delivery</span>
-                  <strong>{placedOrder.deliveryType === "daily_route" ? "Daily Route" : "Personal Delivery"}</strong>
                 </div>
                 <div className="border-t pt-2">
                   <p className="text-xs text-muted-foreground">Delivering to:</p>
@@ -320,9 +307,7 @@ Thank you for ordering fresh from Bengre Farm!`;
                   </div>
                   <div className="flex justify-between text-sm text-muted-foreground">
                     <span>Delivery Fee</span>
-                    <span className={deliveryCharge === 0 ? "text-emerald-600 font-bold" : ""}>
-                      {deliveryCharge === 0 ? "FREE" : `₹${deliveryCharge}`}
-                    </span>
+                    <span className="text-emerald-600 font-bold">FREE</span>
                   </div>
                   <div className="flex justify-between text-xl font-display font-bold border-t pt-3">
                     <span>Total</span><span className="text-primary">₹{grandTotal}</span>
@@ -334,66 +319,67 @@ Thank you for ordering fresh from Bengre Farm!`;
             <Card className="shadow-warm">
               <CardHeader className="pb-3">
                 <CardTitle className="flex items-center gap-2">
-                  <Truck className="h-5 w-5" /> Delivery Details
+                  <CalendarDays className="h-5 w-5" /> Delivery Date &amp; Time
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="flex p-1 bg-muted rounded-lg">
-                  <button onClick={() => setDeliveryType("daily_route")}
-                    className={`flex-1 py-2 text-xs font-bold rounded-md transition-all ${deliveryType === "daily_route" ? "bg-white shadow-sm text-primary" : "text-muted-foreground"}`}>
-                    Daily Route
-                  </button>
-                  <button onClick={() => setDeliveryType("personal")}
-                    className={`flex-1 py-2 text-xs font-bold rounded-md transition-all ${deliveryType === "personal" ? "bg-white shadow-sm text-primary" : "text-muted-foreground"}`}>
-                    Personal Delivery
-                  </button>
+                <div className="flex justify-center rounded-xl border bg-white/60">
+                  <Calendar
+                    mode="single"
+                    selected={selectedDate}
+                    onSelect={setSelectedDate}
+                    defaultMonth={minDate}
+                    disabled={[{ before: minDate }, { after: maxDate }]}
+                  />
+                </div>
+                {dateKey && (
+                  <p className="text-center text-sm font-semibold text-primary">Delivery on {prettyDate(dateKey)}</p>
+                )}
+
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {(["morning", "evening"] as Slot[]).map((s) => {
+                    const a = dateKey ? slotAvailability(s, dateKey) : { ok: true as boolean, reason: "" };
+                    const active = slot === s;
+                    return (
+                      <button
+                        key={s}
+                        type="button"
+                        disabled={!a.ok}
+                        onClick={() => setSlot(s)}
+                        className={`rounded-xl border-2 p-3 text-left transition-all ${active && a.ok ? "border-primary bg-primary/5 shadow-sm" : "border-muted"} ${!a.ok ? "cursor-not-allowed opacity-50" : "hover:border-primary/40"}`}
+                      >
+                        <div className="flex items-center gap-2 text-sm font-bold">
+                          {s === "morning" ? <Sunrise className="h-4 w-4 text-amber-600" /> : <Sunset className="h-4 w-4 text-orange-600" />}
+                          {SLOT_INFO[s].label}
+                        </div>
+                        <div className="mt-1 text-xs font-semibold text-primary">{SLOT_INFO[s].time}</div>
+                        <div className="mt-1 text-[10px] text-muted-foreground">{a.ok ? SLOT_INFO[s].cutoff : a.reason}</div>
+                      </button>
+                    );
+                  })}
                 </div>
 
-                {deliveryType === "daily_route" ? (
-                  <div className="space-y-3 animate-in fade-in duration-300">
-                    <div className="bg-primary/5 border border-primary/20 rounded-lg p-3 space-y-2">
-                      <div className="text-xs font-bold text-primary flex items-center gap-2">
-                        <Clock className="h-4 w-4" /> Route Delivery (11:30 AM - 1:30 PM)
-                      </div>
-                      {/* ✅ Dynamic timing from API settings */}
-                      <p className="text-[10px] text-muted-foreground">
-                        ✓ No delivery charge <br />
-                        ✓ No minimum order <br />
-                        ✓ <strong>Accepting orders {formatTime(orderStartTime)} – {formatTime(routeCutoffTime)}</strong>
-                      </p>
-                    </div>
-                    <div className="space-y-2">
-                      <Label className="text-xs">Select Sector/Area</Label>
-                      <Select value={selectedAreaId} onValueChange={setSelectedAreaId}>
-                        <SelectTrigger><SelectValue placeholder="Chose Area" /></SelectTrigger>
-                        <SelectContent>
-                          {state.areas.map(a => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-2">
-                      <Label className="text-xs">House No / Landmark (Full Address)</Label>
-                      <Input placeholder="e.g. H.No 123, Flat 4B..." value={fullAddress} onChange={(e) => setFullAddress(e.target.value)} />
-                    </div>
-                  </div>
-                ) : (
-                  <div className="space-y-3 animate-in fade-in duration-300">
-                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-2">
-                      <div className="text-xs font-bold text-amber-700 flex items-center gap-2">
-                        <Smartphone className="h-4 w-4" /> Personal / Instant Delivery
-                      </div>
-                      <p className="text-[10px] text-amber-600">
-                        • Delivery Charge: <strong>₹{PERSONAL_DELIVERY_CHARGE}</strong> <br />
-                        • Minimum Order: <strong>₹{PERSONAL_MIN_ORDER}</strong> <br />
-                        • Order anytime, no location restriction.
-                      </p>
-                    </div>
-                    <div className="space-y-2">
-                      <Label className="text-xs">Full Delivery Address</Label>
-                      <Input placeholder="Enter your complete address..." value={fullAddress} onChange={(e) => setFullAddress(e.target.value)} />
-                    </div>
-                  </div>
-                )}
+                <div className="bg-primary/5 border border-primary/20 rounded-lg p-3">
+                  <p className="text-[10px] text-muted-foreground">
+                    ✓ No delivery charge <br />
+                    ✓ No minimum order <br />
+                    ✓ Pick any date up to {MAX_DAYS_AHEAD} days ahead — the order time limit applies only to that delivery day
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label className="text-xs">Select Sector/Area</Label>
+                  <Select value={selectedAreaId} onValueChange={setSelectedAreaId}>
+                    <SelectTrigger><SelectValue placeholder="Choose Area" /></SelectTrigger>
+                    <SelectContent>
+                      {state.areas.map(a => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-xs">House No / Landmark (Full Address)</Label>
+                  <Input placeholder="e.g. H.No 123, Flat 4B..." value={fullAddress} onChange={(e) => setFullAddress(e.target.value)} />
+                </div>
               </CardContent>
             </Card>
 
