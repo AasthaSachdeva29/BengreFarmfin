@@ -3,7 +3,7 @@ import { Header } from "@/components/Header";
 import { useStore } from "@/lib/store";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Truck, ShieldCheck, Leaf, Heart, MessageCircle, MapPin, Phone, Sunrise, Sunset, Check } from "lucide-react";
+import { ShieldCheck, Leaf, Heart, MessageCircle, MapPin, Phone, Sunrise, Sunset, Check } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
@@ -21,15 +21,7 @@ const PHONE_DISPLAY = "98886 06082";
 const PHONE_TEL = "tel:+919888606082";
 const PHONE_WA = "https://wa.me/919888606082";
 
-// "11:15" → "11:15 AM" / "13:00" → "1:00 PM"
-function formatTime(t: string) {
-  const [h, m] = t.split(":").map(Number);
-  const period = h >= 12 ? "PM" : "AM";
-  const displayH = h > 12 ? h - 12 : h === 0 ? 12 : h;
-  return `${displayH}:${String(m).padStart(2, "0")} ${period}`;
-}
-
-/* ───────────────── Product data ───────────────── */
+/* ───────────────────────── Product data ───────────────────────── */
 
 type Product = {
   name: string;
@@ -89,7 +81,7 @@ const storeProducts: Product[] = [
   { name: "White Makhan", img: "/products/makhan.jpg", tint: "bg-stone-50", points: ["Fresh, hand-pressed", "Soft & creamy", "No preservatives"] },
 ];
 
-/* ───────────────── Animations (scoped CSS) ───────────────── */
+/* ───────────────────────── Animations (scoped CSS) ───────────────────────── */
 
 const css = `
 @keyframes bf-marquee{from{transform:translateX(0)}to{transform:translateX(-50%)}}
@@ -110,7 +102,7 @@ const css = `
 }
 `;
 
-/* ───────────────── Small building blocks ───────────────── */
+/* ───────────────────────── Small building blocks ───────────────────────── */
 
 function Reveal({ children, delay = 0, className = "" }: { children: ReactNode; delay?: number; className?: string }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -280,12 +272,11 @@ function VillageBackground() {
   );
 }
 
-/* ───────────────── Page ───────────────── */
+/* ───────────────────────── Page ───────────────────────── */
 
 function HomePage() {
   const { currentUser, state } = useStore();
   const navigate = useNavigate();
-  const { routeCutoffTime } = state.settings;
 
   const points = [
     { icon: <ShieldCheck className="h-7 w-7" />, title: "100% Pure", desc: "Direct from our own farm", color: "bg-sky-50 text-sky-600 border-sky-100" },
@@ -315,7 +306,7 @@ function HomePage() {
               Every product gives you the vibes of village
             </p>
             <p className="mt-6 max-w-lg text-lg leading-relaxed text-muted-foreground">
-              Fresh, farm-to-door dairy. Cow milk, buffalo milk, curd, paneer &amp; ghee — delivered every morning right to your doorstep.
+              Fresh, farm-to-door dairy. Cow milk, buffalo milk, curd, paneer &amp; ghee — delivered morning and evening right to your doorstep.
             </p>
             <div className="mt-8 flex flex-wrap justify-center gap-4">
               {currentUser ? (
@@ -355,7 +346,7 @@ function HomePage() {
                   <Sunrise className="h-5 w-5" /> Morning delivery: 6 – 8 AM
                 </div>
                 <div className="inline-flex items-center gap-2 rounded-full bg-orange-50 px-5 py-2 text-sm font-bold text-orange-700 ring-1 ring-orange-200">
-                  <Sunset className="h-5 w-5" /> Evening delivery: 3 – 5 PM
+                  <Sunset className="h-5 w-5" /> Evening delivery: 4 – 6 PM
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-x-8 gap-y-4 text-sm font-semibold sm:grid-cols-3">
@@ -365,13 +356,10 @@ function HomePage() {
                   </div>
                 ))}
               </div>
-              <div className="mt-8 space-y-3 border-t pt-6 text-center">
-                <p className="text-sm text-muted-foreground">
-                  Order by <strong>{formatTime(routeCutoffTime)}</strong> for same-day free delivery on this route.
-                </p>
-                <div className="inline-flex items-center gap-2 rounded-full bg-amber-50 px-4 py-2 text-xs font-bold text-amber-700 ring-1 ring-amber-200">
-                  <Truck className="h-4 w-4" /> Personal delivery available for all other Chandigarh areas (Min ₹180)
-                </div>
+              <div className="mt-8 space-y-2 border-t pt-6 text-center text-sm text-muted-foreground">
+                <p>Morning delivery: order any time until <strong>11:59 PM</strong> the night before.</p>
+                <p>Evening delivery: order until <strong>3:00 PM</strong> on the delivery day.</p>
+                <p>Pick your delivery date from the calendar when you order.</p>
               </div>
             </Reveal>
           </div>

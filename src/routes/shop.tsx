@@ -1,54 +1,23 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { Header } from "@/components/Header";
-import { useStore, type OrderItem } from "@/lib/store";
+import { useStore, slotText, type OrderItem } from "@/lib/store";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Toaster } from "@/components/ui/sonner";
-import { Plus, Minus, ShoppingCart, Package, Download, Clock, AlertCircle } from "lucide-react";
+import { Plus, Minus, ShoppingCart, Package, Download, Clock } from "lucide-react";
 
 export const Route = createFileRoute("/shop")({
   component: ShopPage,
   head: () => ({ meta: [{ title: "Shop — Bengre Farm" }] }),
 });
 
-// Formats "HH:MM" 24hr → "6:00 AM" / "11:15 AM" etc.
-const fmt12 = (t: string) => {
-  const [h, m] = t.split(":").map(Number);
-  const ampm = h >= 12 ? "PM" : "AM";
-  return `${h % 12 || 12}:${String(m).padStart(2, "0")} ${ampm}`;
-};
-
-function getRouteOrderStatus(settings: { orderStartTime: string; routeCutoffTime: string }): "before" | "open" | "closed" {
-  const now = new Date();
-  const total = now.getHours() * 60 + now.getMinutes();
-
-  const [sh, sm] = settings.orderStartTime.split(":").map(Number);
-  const [ch, cm] = settings.routeCutoffTime.split(":").map(Number);
-  const start = sh * 60 + sm;
-  const end = ch * 60 + cm;
-
-  if (total < start) return "before";
-  if (total <= end) return "open";
-  return "closed";
-}
-
 function ShopPage() {
   const { currentUser, state, setCartQty } = useStore();
   const navigate = useNavigate();
   const cart = state.cart || {};
   const [activeTab, setActiveTab] = useState<"menu" | "orders">("menu");
-  const [routeStatus, setRouteStatus] = useState(() => getRouteOrderStatus(state.settings));
-
-  // Re-check order status every minute using live settings
-  useEffect(() => {
-    setRouteStatus(getRouteOrderStatus(state.settings));
-    const interval = setInterval(() => {
-      setRouteStatus(getRouteOrderStatus(state.settings));
-    }, 60_000);
-    return () => clearInterval(interval);
-  }, [state.settings]);
 
   // Redirect only if not logged in — currentUser is now available instantly from localStorage
   useEffect(() => {
@@ -81,7 +50,7 @@ Date: ${placedOrder.dateKey}
 Customer: ${placedOrder.userName}
 Phone: ${placedOrder.phone}
 Address: ${placedOrder.address}
-Delivery: ${placedOrder.deliveryType.replace("_", " ")}
+Delivery: ${slotText(placedOrder.deliveryType)}
 Payment: ${placedOrder.paymentMethod.toUpperCase()}
 
 ITEMS:
@@ -122,34 +91,15 @@ Thank you for ordering fresh from Bengre Farm!`;
           )}
         </div>
 
-        {/* Order timing banner */}
+        {/* Delivery timing info */}
         {activeTab === "menu" && (
-          <>
-            {routeStatus === "open" && (
-              <div className="mb-4 flex items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
-                <Clock className="h-4 w-4 shrink-0" />
-                <span>
-                  <strong>Orders open</strong> — accepting until <strong>{fmt12(state.settings.routeCutoffTime)}</strong>. Place your order now!
-                </span>
-              </div>
-            )}
-            {routeStatus === "before" && (
-              <div className="mb-4 flex items-center gap-3 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700">
-                <Clock className="h-4 w-4 shrink-0" />
-                <span>
-                  <strong>Orders open at {fmt12(state.settings.orderStartTime)}.</strong> You can browse the menu and add items to cart now.
-                </span>
-              </div>
-            )}
-            {routeStatus === "closed" && (
-              <div className="mb-4 flex items-center gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                <AlertCircle className="h-4 w-4 shrink-0" />
-                <span>
-                  <strong>Orders closed</strong> for today (after {fmt12(state.settings.routeCutoffTime)}). Please come back tomorrow from {fmt12(state.settings.orderStartTime)}.
-                </span>
-              </div>
-            )}
-          </>
+          <div className="mb-4 flex items-start gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+            <Clock className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>
+              Choose your delivery date at checkout. <strong>Morning (6–8 AM)</strong>: order by 11:59 PM the night before.{" "}
+              <strong>Evening (4–6 PM)</strong>: order by 3:00 PM on the delivery day.
+            </span>
+          </div>
         )}
 
         <div className="flex gap-2 mb-6 border-b pb-3">
@@ -231,7 +181,9 @@ Thank you for ordering fresh from Bengre Farm!`;
                         <div className="flex items-center justify-between border-b pb-2">
                           <div>
                             <div className="font-semibold text-lg">Order #{o.orderNo}</div>
-                            <div className="text-xs text-muted-foreground">{o.dateKey}</div>
+                            <div className="text-xs text-muted-foreground">
+                              {o.deliveryType === "morning" || o.deliveryType === "evening" ? "Delivery on " : ""}{o.dateKey}
+                            </div>
                           </div>
                           <div className="text-right">
                             <div className="font-display font-bold text-primary text-lg">₹{o.grandTotal}</div>
@@ -244,7 +196,7 @@ Thank you for ordering fresh from Bengre Farm!`;
                           {o.items.map((i) => `${i.name} × ${i.qty}`).join(", ")}
                         </div>
                         <div className="text-xs text-muted-foreground flex flex-wrap gap-2 pt-1 border-t">
-                          <span className="bg-muted px-2 py-0.5 rounded-full capitalize">{o.deliveryType.replace("_", " ")}</span>
+                          <span className="bg-muted px-2 py-0.5 rounded-full">{slotText(o.deliveryType)}</span>
                           <span className="bg-muted px-2 py-0.5 rounded-full uppercase">{o.paymentMethod}</span>
                           <span className="bg-muted px-2 py-0.5 rounded-full">{o.address}</span>
                         </div>
