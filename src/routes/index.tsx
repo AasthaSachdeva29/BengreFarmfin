@@ -1,5 +1,4 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { Logo } from "@/components/Logo";
 import { Header } from "@/components/Header";
 import { useStore } from "@/lib/store";
 import { Button } from "@/components/ui/button";
@@ -30,7 +29,7 @@ function formatTime(t: string) {
   return `${displayH}:${String(m).padStart(2, "0")} ${period}`;
 }
 
-/* ───────────────────────── Product data ───────────────────────── */
+/* ───────────────── Product data ───────────────── */
 
 type Product = {
   name: string;
@@ -90,7 +89,7 @@ const storeProducts: Product[] = [
   { name: "White Makhan", img: "/products/makhan.jpg", tint: "bg-stone-50", points: ["Fresh, hand-pressed", "Soft & creamy", "No preservatives"] },
 ];
 
-/* ───────────────────────── Animations (scoped CSS) ───────────────────────── */
+/* ───────────────── Animations (scoped CSS) ───────────────── */
 
 const css = `
 @keyframes bf-marquee{from{transform:translateX(0)}to{transform:translateX(-50%)}}
@@ -111,7 +110,7 @@ const css = `
 }
 `;
 
-/* ───────────────────────── Small building blocks ───────────────────────── */
+/* ───────────────── Small building blocks ───────────────── */
 
 function Reveal({ children, delay = 0, className = "" }: { children: ReactNode; delay?: number; className?: string }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -207,14 +206,10 @@ function SectionTitle({ label, title, sub }: { label: string; title: string; sub
   );
 }
 
-/* Two cupped hands holding a sprout — the Bengre Farm emblem */
+/* Two cupped hands — the Bengre Farm emblem (hands only) */
 function HandsLogo({ className = "" }: { className?: string }) {
   return (
-    <svg viewBox="0 0 160 160" className={className} role="img" aria-label="Bengre Farm hands logo">
-      <circle cx="80" cy="80" r="76" fill="#fff8ec" stroke="#e6d3a8" strokeWidth="3" />
-      <path d="M80 96 V62" stroke="#6aa84f" strokeWidth="4" strokeLinecap="round" />
-      <path d="M80 72 C62 68 56 54 58 44 C72 44 80 56 80 72 Z" fill="#9ed57b" />
-      <path d="M80 64 C98 60 104 46 102 36 C88 36 80 48 80 64 Z" fill="#b7e08f" />
+    <svg viewBox="24 86 112 48" className={className} role="img" aria-label="Bengre Farm hands logo">
       <path d="M28 98 C32 118 54 130 80 128 C80 121 78 114 74 110 C58 110 45 103 39 91 C34 91 30 93 28 98 Z" fill="#f6d2ae" stroke="#cf9a6b" strokeWidth="2.5" strokeLinejoin="round" />
       <path d="M132 98 C128 118 106 130 80 128 C80 121 82 114 86 110 C102 110 115 103 121 91 C126 91 130 93 132 98 Z" fill="#f6d2ae" stroke="#cf9a6b" strokeWidth="2.5" strokeLinejoin="round" />
     </svg>
@@ -285,7 +280,7 @@ function VillageBackground() {
   );
 }
 
-/* ───────────────────────── Page ───────────────────────── */
+/* ───────────────── Page ───────────────── */
 
 function HomePage() {
   const { currentUser, state } = useStore();
@@ -304,64 +299,44 @@ function HomePage() {
       <VillageBackground />
       <Header />
       <main>
-        {/* Hero */}
-        <section className="border-b border-white/60 bg-white/40 backdrop-blur-[2px]">
-          <div className="container mx-auto grid items-center gap-10 px-4 py-14 lg:grid-cols-2 lg:py-20">
-            <div className="space-y-7 animate-in fade-in slide-in-from-left-4 duration-700">
-              <div className="flex items-center gap-5">
-                <Logo className="h-20 w-20 drop-shadow-lg lg:h-24 lg:w-24" />
-                <div>
-                  <h1 className="font-display text-4xl font-bold leading-tight text-primary lg:text-6xl">Bengre Farm</h1>
-                  <p className="mt-1 text-[11px] uppercase tracking-[0.25em] text-muted-foreground lg:text-sm lg:tracking-[0.3em]">
-                    Every product gives you the vibes of village
-                  </p>
-                </div>
-              </div>
-              <p className="max-w-lg text-lg leading-relaxed text-muted-foreground">
-                Fresh, farm-to-door dairy. Cow milk, buffalo milk, curd, paneer &amp; ghee — delivered every morning right to your doorstep.
-              </p>
-              <div className="flex flex-wrap gap-4">
-                {currentUser ? (
-                  <Link
-                    to={currentUser.role === "admin" ? "/admin" : currentUser.role === "delivery" ? "/delivery" : "/shop"}
-                    className="rounded-xl bg-gradient-primary px-8 py-4 text-lg font-bold text-white shadow-warm transition-opacity hover:opacity-90"
-                  >
-                    Go to {currentUser.role === "admin" ? "Dashboard" : currentUser.role === "delivery" ? "Deliveries" : "Shop"} →
-                  </Link>
-                ) : (
-                  <>
-                    <Link to="/login" className="rounded-xl bg-gradient-primary px-8 py-4 text-lg font-bold text-white shadow-warm transition-opacity hover:opacity-90">
-                      Login
-                    </Link>
-                    <Link to="/signup" className="rounded-xl border-2 border-primary/20 bg-white/60 px-8 py-4 text-lg font-bold text-primary transition-colors hover:bg-primary/5">
-                      Create Account
-                    </Link>
-                  </>
-                )}
-              </div>
-            </div>
-            <div className="flex justify-center animate-in fade-in slide-in-from-right-4 duration-700 delay-200">
-              <div className="bf-float rounded-[2rem] border-4 border-white bg-white shadow-2xl">
-                <img src="/products/milk.jpg" alt="Fresh farm milk" className="h-64 w-72 rounded-[1.6rem] object-cover lg:h-80 lg:w-96" />
-              </div>
-            </div>
-          </div>
-        </section>
-
         {/* Available for delivery */}
         <section className="bg-white/50 py-14 backdrop-blur-[2px]">
           <SectionTitle label="Fresh from our farm" title="Available for Delivery" sub="Paneer is ready for your doorstep today — more village favourites are on the way." />
           <Marquee items={deliveryProducts} badge="Available for delivery" />
         </section>
 
-        {/* Hands logo + brand line */}
-        <section className="py-16">
-          <Reveal className="mx-auto flex max-w-2xl flex-col items-center px-4 text-center">
-            <HandsLogo className="bf-float h-32 w-32 drop-shadow-md" />
-            <h2 className="mt-5 font-display text-5xl font-bold text-primary">Bengre Farm</h2>
+        {/* Hero */}
+        <section className="border-b border-white/60 bg-white/40 backdrop-blur-[2px]">
+          <div className="container mx-auto flex flex-col items-center px-4 py-14 text-center lg:py-20 animate-in fade-in slide-in-from-bottom-4 duration-700">
+            <HandsLogo className="bf-float h-auto w-36 drop-shadow-md lg:w-44" />
+            <h1 className="mt-4 font-display text-5xl font-bold leading-tight text-primary lg:text-7xl">Bengre Farm</h1>
             <div className="mx-auto mt-3 h-1 w-20 rounded-full bg-emerald-300" />
-            <p className="mt-4 text-sm uppercase tracking-[0.3em] text-stone-500">Every product gives you the vibes of village</p>
-          </Reveal>
+            <p className="mt-4 text-[11px] uppercase tracking-[0.25em] text-muted-foreground lg:text-sm lg:tracking-[0.3em]">
+              Every product gives you the vibes of village
+            </p>
+            <p className="mt-6 max-w-lg text-lg leading-relaxed text-muted-foreground">
+              Fresh, farm-to-door dairy. Cow milk, buffalo milk, curd, paneer &amp; ghee — delivered every morning right to your doorstep.
+            </p>
+            <div className="mt-8 flex flex-wrap justify-center gap-4">
+              {currentUser ? (
+                <Link
+                  to={currentUser.role === "admin" ? "/admin" : currentUser.role === "delivery" ? "/delivery" : "/shop"}
+                  className="rounded-xl bg-gradient-primary px-8 py-4 text-lg font-bold text-white shadow-warm transition-opacity hover:opacity-90"
+                >
+                  Go to {currentUser.role === "admin" ? "Dashboard" : currentUser.role === "delivery" ? "Deliveries" : "Shop"} →
+                </Link>
+              ) : (
+                <>
+                  <Link to="/login" className="rounded-xl bg-gradient-primary px-8 py-4 text-lg font-bold text-white shadow-warm transition-opacity hover:opacity-90">
+                    Login
+                  </Link>
+                  <Link to="/signup" className="rounded-xl border-2 border-primary/20 bg-white/60 px-8 py-4 text-lg font-bold text-primary transition-colors hover:bg-primary/5">
+                    Create Account
+                  </Link>
+                </>
+              )}
+            </div>
+          </div>
         </section>
 
         {/* Available at store */}
@@ -428,7 +403,7 @@ function HomePage() {
             <div className="grid items-start gap-8 md:grid-cols-3">
               <div className="space-y-4">
                 <div className="flex items-center gap-3">
-                  <Logo className="h-12 w-12" />
+                  <HandsLogo className="h-auto w-16" />
                   <div>
                     <h3 className="font-display text-xl font-bold text-primary">Bengre Farm</h3>
                     <p className="text-[10px] uppercase tracking-widest text-muted-foreground">Vibes of Village</p>
