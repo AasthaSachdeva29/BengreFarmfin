@@ -1,12 +1,12 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { Logo } from "@/components/Logo";
 import { Header } from "@/components/Header";
-import { useStore, type MenuItem } from "@/lib/store";
-import { Card, CardContent } from "@/components/ui/card";
+import { useStore } from "@/lib/store";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Truck, ShieldCheck, Clock, Leaf, Heart, MessageCircle, MapPin, ChevronRight, Smartphone } from "lucide-react";
-import { useMemo } from "react";
+import { Truck, ShieldCheck, Leaf, Heart, MessageCircle, MapPin, Phone, Sunrise, Sunset, Check } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import type { ReactNode } from "react";
 
 export const Route = createFileRoute("/")({
   component: HomePage,
@@ -18,7 +18,11 @@ export const Route = createFileRoute("/")({
   }),
 });
 
-// ✅ "11:15" → "11:15 AM" / "13:00" → "1:00 PM"
+const PHONE_DISPLAY = "98886 06082";
+const PHONE_TEL = "tel:+919888606082";
+const PHONE_WA = "https://wa.me/919888606082";
+
+// "11:15" → "11:15 AM" / "13:00" → "1:00 PM"
 function formatTime(t: string) {
   const [h, m] = t.split(":").map(Number);
   const period = h >= 12 ? "PM" : "AM";
@@ -26,209 +30,450 @@ function formatTime(t: string) {
   return `${displayH}:${String(m).padStart(2, "0")} ${period}`;
 }
 
+/* ───────────────────────── Product data ───────────────────────── */
+
+type Product = {
+  name: string;
+  img?: string;
+  emoji?: string;
+  tint: string;
+  points: string[];
+  soon?: boolean;
+};
+
+const deliveryProducts: Product[] = [
+  {
+    name: "Paneer",
+    img: "/products/paneer.jpg",
+    tint: "bg-amber-50",
+    points: ["No soda added", "No milk powder", "Made from pure, fresh milk", "Soft, fresh & made in small batches"],
+  },
+  {
+    name: "Gud",
+    emoji: "🍯",
+    tint: "bg-orange-100",
+    soon: true,
+    points: ["Traditional jaggery", "No added colour", "Rich, earthy sweetness", "Made the village way"],
+  },
+  {
+    name: "Shakkar",
+    emoji: "🍬",
+    tint: "bg-yellow-50",
+    soon: true,
+    points: ["Unrefined desi shakkar", "No bleaching", "Natural, mellow sweetness", "Perfect for chai & milk"],
+  },
+  {
+    name: "Desi Ghee",
+    img: "/products/cow-ghee.jpg",
+    tint: "bg-yellow-50",
+    soon: true,
+    points: ["Traditional slow-cooked ghee", "Rich aroma & golden colour", "No added flavour", "Pure & unadulterated"],
+  },
+  {
+    name: "Atta Biscuits",
+    emoji: "🍪",
+    tint: "bg-amber-100",
+    soon: true,
+    points: ["Made with whole wheat atta", "No maida", "No artificial colour", "Crunchy, home-style taste"],
+  },
+];
+
+const storeProducts: Product[] = [
+  { name: "Milk", img: "/products/milk.jpg", tint: "bg-sky-50", points: ["Fresh & pure farm milk", "Cow, buffalo & mix options", "Delivered fresh every day"] },
+  { name: "Lassi", img: "/products/lassi.jpg", tint: "bg-rose-50", points: ["Bilona-style thick lassi", "Cool & refreshing", "Made from fresh curd"] },
+  { name: "Ghee", img: "/products/buffalo-ghee.jpg", tint: "bg-yellow-50", points: ["Rich in aroma & taste", "Made from pure milk fat", "No added flavour"] },
+  { name: "Gud", emoji: "🍯", tint: "bg-orange-100", points: ["Traditional jaggery", "No added colour", "Rich, earthy sweetness"] },
+  { name: "Shakkar", emoji: "🍬", tint: "bg-yellow-50", points: ["Unrefined desi shakkar", "No bleaching", "Natural sweetness"] },
+  { name: "Paneer", img: "/products/paneer.jpg", tint: "bg-amber-50", points: ["No soda, no milk powder", "Made from pure milk", "Soft & fresh"] },
+  { name: "Desi Ghee", img: "/products/cow-ghee.jpg", tint: "bg-yellow-50", points: ["Bilona-style ghee", "Golden colour & rich aroma", "Pure & unadulterated"] },
+  { name: "Biscuits", emoji: "🍪", tint: "bg-amber-100", points: ["Whole wheat atta", "No maida", "Crunchy home-style taste"] },
+  { name: "White Makhan", img: "/products/makhan.jpg", tint: "bg-stone-50", points: ["Fresh, hand-pressed", "Soft & creamy", "No preservatives"] },
+];
+
+/* ───────────────────────── Animations (scoped CSS) ───────────────────────── */
+
+const css = `
+@keyframes bf-marquee{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+@keyframes bf-float{0%,100%{transform:translateY(0)}50%{transform:translateY(-10px)}}
+@keyframes bf-cloud{from{transform:translateX(-30vw)}to{transform:translateX(110vw)}}
+@keyframes bf-graze{0%,100%{transform:translateY(0)}50%{transform:translateY(3px)}}
+@keyframes bf-sway{0%,100%{transform:rotate(-2deg)}50%{transform:rotate(2deg)}}
+.bf-track{display:flex;width:max-content;animation:bf-marquee var(--d,40s) linear infinite}
+.bf-track.rev{animation-direction:reverse}
+.bf-marquee:hover .bf-track{animation-play-state:paused}
+.bf-float{animation:bf-float 5s ease-in-out infinite}
+.bf-cloud{animation:bf-cloud linear infinite}
+.bf-graze{transform-box:fill-box;transform-origin:center bottom;animation:bf-graze 4s ease-in-out infinite}
+.bf-sway{transform-box:fill-box;transform-origin:center bottom;animation:bf-sway 5s ease-in-out infinite}
+@media (prefers-reduced-motion:reduce){
+  .bf-track,.bf-float,.bf-cloud,.bf-graze,.bf-sway{animation:none!important}
+  .bf-marquee{overflow-x:auto}
+}
+`;
+
+/* ───────────────────────── Small building blocks ───────────────────────── */
+
+function Reveal({ children, delay = 0, className = "" }: { children: ReactNode; delay?: number; className?: string }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [shown, setShown] = useState(false);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    if (typeof IntersectionObserver === "undefined") {
+      setShown(true);
+      return;
+    }
+    const io = new IntersectionObserver(([e]) => {
+      if (e.isIntersecting) {
+        setShown(true);
+        io.disconnect();
+      }
+    }, { threshold: 0.15 });
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
+  return (
+    <div
+      ref={ref}
+      style={{ transitionDelay: `${delay}ms` }}
+      className={`transition-all duration-700 ease-out ${shown ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"} ${className}`}
+    >
+      {children}
+    </div>
+  );
+}
+
+function ProductCard({ p, badge }: { p: Product; badge?: string }) {
+  return (
+    <div className="mr-5 w-64 shrink-0 overflow-hidden rounded-2xl border border-emerald-100 bg-white/90 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-lg">
+      <div className={`relative flex h-40 items-center justify-center overflow-hidden ${p.tint}`}>
+        {p.img ? (
+          <img src={p.img} alt={p.name} loading="lazy" className={`h-full w-full object-cover ${p.soon ? "saturate-75" : ""}`} />
+        ) : (
+          <span className="text-7xl drop-shadow-sm">{p.emoji}</span>
+        )}
+        {p.soon && (
+          <div className="absolute inset-0 flex items-center justify-center bg-white/45">
+            <span className="-rotate-6 rounded-full border-2 border-amber-300 bg-amber-100 px-4 py-1 text-sm font-bold tracking-wide text-amber-800 shadow">
+              Coming Soon
+            </span>
+          </div>
+        )}
+        {badge && !p.soon && (
+          <span className="absolute left-3 top-3 rounded-full bg-emerald-100 px-3 py-1 text-[11px] font-bold text-emerald-800 shadow-sm">
+            {badge}
+          </span>
+        )}
+      </div>
+      <div className="space-y-2 p-4">
+        <h3 className="font-display text-xl font-bold text-stone-800">{p.name}</h3>
+        <ul className="space-y-1">
+          {p.points.map((pt) => (
+            <li key={pt} className="flex items-start gap-2 text-xs leading-snug text-stone-600">
+              <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-500" /> {pt}
+            </li>
+          ))}
+        </ul>
+      </div>
+    </div>
+  );
+}
+
+function Marquee({ items, badge, reverse = false }: { items: Product[]; badge?: string; reverse?: boolean }) {
+  // Make sure one half of the track is wider than a big screen so there is never a gap
+  const half = items.length < 8 ? [...items, ...items] : items;
+  return (
+    <div className="bf-marquee overflow-hidden [mask-image:linear-gradient(to_right,transparent,black_5%,black_95%,transparent)]">
+      <div className={`bf-track py-4 ${reverse ? "rev" : ""}`} style={{ ["--d" as string]: `${half.length * 6}s` }}>
+        {[...half, ...half].map((p, i) => (
+          <div key={`${p.name}-${i}`} aria-hidden={i >= half.length ? true : undefined}>
+            <ProductCard p={p} badge={badge} />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function SectionTitle({ label, title, sub }: { label: string; title: string; sub?: string }) {
+  return (
+    <Reveal className="mb-6 text-center">
+      <span className="inline-block rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-[11px] font-bold uppercase tracking-widest text-emerald-700">
+        {label}
+      </span>
+      <h2 className="mt-3 font-display text-3xl font-bold text-stone-800 lg:text-4xl">{title}</h2>
+      {sub && <p className="mx-auto mt-2 max-w-xl text-sm text-stone-500">{sub}</p>}
+    </Reveal>
+  );
+}
+
+/* Two cupped hands holding a sprout — the Bengre Farm emblem */
+function HandsLogo({ className = "" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 160 160" className={className} role="img" aria-label="Bengre Farm hands logo">
+      <circle cx="80" cy="80" r="76" fill="#fff8ec" stroke="#e6d3a8" strokeWidth="3" />
+      <path d="M80 96 V62" stroke="#6aa84f" strokeWidth="4" strokeLinecap="round" />
+      <path d="M80 72 C62 68 56 54 58 44 C72 44 80 56 80 72 Z" fill="#9ed57b" />
+      <path d="M80 64 C98 60 104 46 102 36 C88 36 80 48 80 64 Z" fill="#b7e08f" />
+      <path d="M28 98 C32 118 54 130 80 128 C80 121 78 114 74 110 C58 110 45 103 39 91 C34 91 30 93 28 98 Z" fill="#f6d2ae" stroke="#cf9a6b" strokeWidth="2.5" strokeLinejoin="round" />
+      <path d="M132 98 C128 118 106 130 80 128 C80 121 82 114 86 110 C102 110 115 103 121 91 C126 91 130 93 132 98 Z" fill="#f6d2ae" stroke="#cf9a6b" strokeWidth="2.5" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function Cow({ x, y, s = 1, flip = false, delay = 0 }: { x: number; y: number; s?: number; flip?: boolean; delay?: number }) {
+  const t = flip ? `translate(${x + 100 * s} ${y}) scale(${-s} ${s})` : `translate(${x} ${y}) scale(${s})`;
+  return (
+    <g transform={t}>
+      <g className="bf-graze" style={{ animationDelay: `${delay}s` }} stroke="#d8c8b0" strokeWidth="1.6" strokeLinejoin="round">
+        <path d="M10 22 q-9 6 -5 22" fill="none" strokeLinecap="round" />
+        <rect x="17" y="38" width="7" height="18" rx="3" fill="#fff" />
+        <rect x="30" y="38" width="7" height="18" rx="3" fill="#fff" />
+        <rect x="52" y="38" width="7" height="18" rx="3" fill="#fff" />
+        <rect x="64" y="38" width="7" height="18" rx="3" fill="#fff" />
+        <rect x="10" y="12" width="64" height="30" rx="14" fill="#fff" />
+        <ellipse cx="30" cy="24" rx="9" ry="6" fill="#ecdcc6" stroke="none" />
+        <ellipse cx="55" cy="31" rx="7" ry="5" fill="#ecdcc6" stroke="none" />
+        <ellipse cx="82" cy="24" rx="12" ry="10" fill="#fff" />
+        <ellipse cx="90" cy="29" rx="6" ry="4.5" fill="#f8dcd6" stroke="none" />
+        <ellipse cx="75" cy="16" rx="5" ry="3" fill="#ecdcc6" transform="rotate(-25 75 16)" />
+        <circle cx="85" cy="21" r="1.6" fill="#7a6a58" stroke="none" />
+      </g>
+    </g>
+  );
+}
+
+function VillageBackground() {
+  return (
+    <div aria-hidden className="pointer-events-none fixed inset-0 -z-10 overflow-hidden bg-gradient-to-b from-sky-50 via-amber-50/70 to-emerald-50">
+      {/* drifting clouds */}
+      {[{ top: "6%", dur: 90, delay: -10, w: 140 }, { top: "16%", dur: 120, delay: -60, w: 100 }, { top: "10%", dur: 150, delay: -100, w: 180 }].map((c, i) => (
+        <div key={i} className="bf-cloud absolute left-0" style={{ top: c.top, animationDuration: `${c.dur}s`, animationDelay: `${c.delay}s` }}>
+          <svg width={c.w} height={c.w * 0.45} viewBox="0 0 140 63">
+            <g fill="#ffffff" opacity="0.9">
+              <ellipse cx="40" cy="42" rx="32" ry="18" />
+              <ellipse cx="72" cy="32" rx="30" ry="22" />
+              <ellipse cx="102" cy="43" rx="28" ry="16" />
+            </g>
+          </svg>
+        </div>
+      ))}
+      {/* hills, grass and cows */}
+      <svg className="absolute bottom-0 left-0 h-[55vh] w-full" viewBox="0 0 1440 500" preserveAspectRatio="xMidYMax slice">
+        <defs>
+          <pattern id="bf-grass" width="28" height="36" patternUnits="userSpaceOnUse">
+            <path d="M4 36 Q6 18 2 6 Q9 18 9 36Z" fill="#a9d68b" />
+            <path d="M14 36 Q15 14 14 2 Q20 16 19 36Z" fill="#b9e09d" />
+            <path d="M22 36 Q24 20 27 10 Q28 22 27 36Z" fill="#a9d68b" />
+          </pattern>
+        </defs>
+        <path d="M0 260 C240 190 480 230 720 210 C960 190 1200 240 1440 200 L1440 500 L0 500Z" fill="#e3f3d6" />
+        <path d="M0 330 C300 270 560 320 820 295 C1080 270 1260 320 1440 290 L1440 500 L0 500Z" fill="#d5ecc2" />
+        <Cow x={170} y={250} s={0.8} delay={0} />
+        <Cow x={640} y={262} s={0.7} flip delay={1.2} />
+        <Cow x={1110} y={246} s={0.85} delay={2.1} />
+        <path d="M0 410 C260 370 520 410 800 392 C1080 374 1280 408 1440 385 L1440 500 L0 500Z" fill="#c6e4ae" />
+        <Cow x={380} y={338} s={1.35} delay={0.6} />
+        <Cow x={930} y={332} s={1.2} flip delay={1.8} />
+        <rect x="0" y="405" width="1440" height="95" fill="url(#bf-grass)" opacity="0.8" />
+        <g className="bf-sway">
+          <path d="M60 470 Q64 440 58 420 Q72 442 70 470Z" fill="#98cf78" />
+          <path d="M1300 470 Q1304 438 1296 416 Q1312 440 1310 470Z" fill="#98cf78" />
+        </g>
+      </svg>
+    </div>
+  );
+}
+
+/* ───────────────────────── Page ───────────────────────── */
+
 function HomePage() {
   const { currentUser, state } = useStore();
   const navigate = useNavigate();
-
-  // ✅ Pull live settings from store
   const { routeCutoffTime } = state.settings;
 
-  const groupedMenu = useMemo(() => {
-    const groups: Record<string, MenuItem[]> = {};
-    state.menu.forEach((item) => {
-      if (!groups[item.category]) groups[item.category] = [];
-      groups[item.category].push(item);
-    });
-    return groups;
-  }, [state.menu]);
+  const points = [
+    { icon: <ShieldCheck className="h-7 w-7" />, title: "100% Pure", desc: "Direct from our own farm", color: "bg-sky-50 text-sky-600 border-sky-100" },
+    { icon: <Leaf className="h-7 w-7" />, title: "Farm Fresh", desc: "No preservatives, no chemicals", color: "bg-emerald-50 text-emerald-600 border-emerald-100" },
+    { icon: <Heart className="h-7 w-7" />, title: "Traditional", desc: "Traditional methods, pure taste", color: "bg-rose-50 text-rose-500 border-rose-100" },
+  ];
 
   return (
-    <div className="min-h-screen bg-gradient-warm">
+    <div className="relative isolate min-h-screen">
+      <style>{css}</style>
+      <VillageBackground />
       <Header />
       <main>
-        {/* Hero Section */}
-        <section className="relative overflow-hidden border-b">
-          <div className="absolute inset-0 bg-gradient-primary opacity-[0.03] pointer-events-none" />
-          <div className="container mx-auto px-4 py-16 lg:py-24">
-            <div className="grid gap-12 lg:grid-cols-2 items-center">
-              <div className="space-y-8 animate-in fade-in slide-in-from-left-4 duration-700">
-                <div className="flex items-center gap-5">
-                  <Logo className="h-24 w-24 drop-shadow-lg" />
-                  <div>
-                    <h1 className="font-display text-5xl lg:text-6xl font-bold text-primary leading-tight">
-                      Bengre Farm
-                    </h1>
-                    <p className="text-sm tracking-[0.3em] text-muted-foreground uppercase mt-1">
-                      Every product gives you the vibes of village
-                    </p>
-                  </div>
-                </div>
-                <p className="text-xl text-muted-foreground max-w-lg leading-relaxed">
-                  Fresh, farm-to-door dairy. Cow milk, buffalo milk, curd, paneer & ghee — 
-                  delivered every morning right to your doorstep.
-                </p>
-                <div className="flex flex-wrap gap-4">
-                  {currentUser ? (
-                    <Link
-                      to={currentUser.role === "admin" ? "/admin" : currentUser.role === "delivery" ? "/delivery" : "/shop"}
-                      className="text-lg px-8 py-4 bg-gradient-primary text-white rounded-xl hover:opacity-90 transition-opacity shadow-warm font-bold"
-                    >
-                      Go to {currentUser.role === "admin" ? "Dashboard" : currentUser.role === "delivery" ? "Deliveries" : "Shop"} →
-                    </Link>
-                  ) : (
-                    <>
-                      <Link to="/login" className="text-lg px-8 py-4 bg-gradient-primary text-white rounded-xl hover:opacity-90 transition-opacity shadow-warm font-bold">
-                        Login
-                      </Link>
-                      <Link to="/signup" className="text-lg px-8 py-4 border-2 border-primary/20 text-primary rounded-xl hover:bg-primary/5 transition-colors font-bold">
-                        Create Account
-                      </Link>
-                    </>
-                  )}
+        {/* Hero */}
+        <section className="border-b border-white/60 bg-white/40 backdrop-blur-[2px]">
+          <div className="container mx-auto grid items-center gap-10 px-4 py-14 lg:grid-cols-2 lg:py-20">
+            <div className="space-y-7 animate-in fade-in slide-in-from-left-4 duration-700">
+              <div className="flex items-center gap-5">
+                <Logo className="h-20 w-20 drop-shadow-lg lg:h-24 lg:w-24" />
+                <div>
+                  <h1 className="font-display text-4xl font-bold leading-tight text-primary lg:text-6xl">Bengre Farm</h1>
+                  <p className="mt-1 text-[11px] uppercase tracking-[0.25em] text-muted-foreground lg:text-sm lg:tracking-[0.3em]">
+                    Every product gives you the vibes of village
+                  </p>
                 </div>
               </div>
-
-              {/* ✅ Feature cards now use dynamic times */}
-              <div className="grid grid-cols-2 gap-4 animate-in fade-in slide-in-from-right-4 duration-700 delay-200">
-                <FeatureCard icon={<Truck className="h-6 w-6" />}       title="0₹ Delivery"       desc="On our daily route (11:30 AM)"                              color="text-primary" />
-                <FeatureCard icon={<Clock className="h-6 w-6" />}       title="Route Timing"      desc={`Orders close by ${formatTime(routeCutoffTime)}`}           color="text-amber-600" />
-                <FeatureCard icon={<Smartphone className="h-6 w-6" />}  title="Personal Delivery" desc="Instant dispatch for min ₹180"                              color="text-emerald-600" />
-                <FeatureCard icon={<ShieldCheck className="h-6 w-6" />} title="100% Pure"         desc="Direct from our own farm"                                   color="text-blue-600" />
-                <FeatureCard icon={<Leaf className="h-6 w-6" />}        title="Farm Fresh"        desc="No preservatives, no chemicals"                             color="text-green-600" />
-                <FeatureCard icon={<Heart className="h-6 w-6" />}       title="Traditional"       desc="Traditional methods, pure taste"                            color="text-rose-600" />
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* Vibes of Village */}
-        <section className="py-20 bg-card/30">
-          <div className="container mx-auto px-4">
-            <div className="max-w-3xl mx-auto text-center mb-16">
-              <h2 className="font-display text-4xl font-bold mb-4">Vibes of Village</h2>
-              <div className="h-1 w-20 bg-primary mx-auto mb-6 rounded-full" />
-              <p className="text-muted-foreground text-lg italic">
-                "Each product carries the story of our farm and the traditional wisdom of our elders."
+              <p className="max-w-lg text-lg leading-relaxed text-muted-foreground">
+                Fresh, farm-to-door dairy. Cow milk, buffalo milk, curd, paneer &amp; ghee — delivered every morning right to your doorstep.
               </p>
+              <div className="flex flex-wrap gap-4">
+                {currentUser ? (
+                  <Link
+                    to={currentUser.role === "admin" ? "/admin" : currentUser.role === "delivery" ? "/delivery" : "/shop"}
+                    className="rounded-xl bg-gradient-primary px-8 py-4 text-lg font-bold text-white shadow-warm transition-opacity hover:opacity-90"
+                  >
+                    Go to {currentUser.role === "admin" ? "Dashboard" : currentUser.role === "delivery" ? "Deliveries" : "Shop"} →
+                  </Link>
+                ) : (
+                  <>
+                    <Link to="/login" className="rounded-xl bg-gradient-primary px-8 py-4 text-lg font-bold text-white shadow-warm transition-opacity hover:opacity-90">
+                      Login
+                    </Link>
+                    <Link to="/signup" className="rounded-xl border-2 border-primary/20 bg-white/60 px-8 py-4 text-lg font-bold text-primary transition-colors hover:bg-primary/5">
+                      Create Account
+                    </Link>
+                  </>
+                )}
+              </div>
             </div>
-            <div className="grid gap-12 max-w-6xl mx-auto">
-              {Object.entries(groupedMenu).map(([category, items], index) => {
-                const mainItem = items[0];
-                const isEven = index % 2 === 0;
-                return (
-                  <div key={category} className={`flex flex-col ${isEven ? "lg:flex-row" : "lg:flex-row-reverse"} gap-10 items-center animate-in fade-in duration-1000`}>
-                    <div className="lg:w-1/2 group relative">
-                      <div className="absolute -inset-4 bg-primary/5 rounded-3xl blur-xl group-hover:bg-primary/10 transition-all" />
-                      <div className="relative aspect-video rounded-2xl overflow-hidden border-4 border-white shadow-2xl">
-                        {mainItem.imageUrl ? (
-                          <img src={mainItem.imageUrl} alt={category} className="object-cover w-full h-full transition-transform duration-700 group-hover:scale-105" />
-                        ) : (
-                          <div className="w-full h-full bg-muted flex items-center justify-center text-7xl">
-                            {category.includes("Milk") ? "🥛" : category.includes("Ghee") ? "🫕" : "🍶"}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                    <div className="lg:w-1/2 space-y-6">
-                      <div className="space-y-2">
-                        <h3 className="font-display text-3xl font-bold text-primary">{category}</h3>
-                        <div className="flex gap-2 flex-wrap">
-                          {items.map(i => <Badge key={i.id} variant="outline" className="bg-white/50">{i.unit}</Badge>)}
-                        </div>
-                      </div>
-                      <p className="text-muted-foreground leading-relaxed text-lg">{mainItem.description}</p>
-                      <div className="pt-4">
-                        <Button
-                          variant="link"
-                          className="p-0 h-auto text-primary font-bold group gap-2"
-                          onClick={() => navigate({ to: "/shop" })}
-                        >
-                          Order {category} now <ChevronRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
+            <div className="flex justify-center animate-in fade-in slide-in-from-right-4 duration-700 delay-200">
+              <div className="bf-float rounded-[2rem] border-4 border-white bg-white shadow-2xl">
+                <img src="/products/milk.jpg" alt="Fresh farm milk" className="h-64 w-72 rounded-[1.6rem] object-cover lg:h-80 lg:w-96" />
+              </div>
             </div>
           </div>
         </section>
 
-        {/* Delivery Areas */}
+        {/* Available for delivery */}
+        <section className="bg-white/50 py-14 backdrop-blur-[2px]">
+          <SectionTitle label="Fresh from our farm" title="Available for Delivery" sub="Paneer is ready for your doorstep today — more village favourites are on the way." />
+          <Marquee items={deliveryProducts} badge="Available for delivery" />
+        </section>
+
+        {/* Hands logo + brand line */}
+        <section className="py-16">
+          <Reveal className="mx-auto flex max-w-2xl flex-col items-center px-4 text-center">
+            <HandsLogo className="bf-float h-32 w-32 drop-shadow-md" />
+            <h2 className="mt-5 font-display text-5xl font-bold text-primary">Bengre Farm</h2>
+            <div className="mx-auto mt-3 h-1 w-20 rounded-full bg-emerald-300" />
+            <p className="mt-4 text-sm uppercase tracking-[0.3em] text-stone-500">Every product gives you the vibes of village</p>
+          </Reveal>
+        </section>
+
+        {/* Available at store */}
+        <section className="bg-white/50 py-14 backdrop-blur-[2px]">
+          <SectionTitle label="Visit our store" title="Available at Store" sub="Everything we make, with the quality you can taste." />
+          <Marquee items={storeProducts} reverse />
+        </section>
+
+        {/* Daily route */}
         <section className="py-16">
           <div className="container mx-auto px-4">
-            <div className="text-center mb-10">
-              <h2 className="font-display text-3xl lg:text-4xl font-bold">Daily Route Delivery</h2>
-              <p className="text-muted-foreground mt-2">Zero delivery charge · 11:30 AM – 1:30 PM</p>
-            </div>
-            <div className="max-w-4xl mx-auto bg-card p-8 rounded-2xl border-2 border-primary/10 shadow-warm">
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-y-4 gap-x-8 text-sm font-semibold">
-                {state.areas.map(a => (
+            <SectionTitle label="Zero delivery charge" title="Daily Route Delivery" />
+            <Reveal className="mx-auto max-w-4xl rounded-2xl border-2 border-emerald-100 bg-white/85 p-8 shadow-warm backdrop-blur">
+              <div className="mb-6 flex flex-wrap justify-center gap-3">
+                <div className="inline-flex items-center gap-2 rounded-full bg-amber-50 px-5 py-2 text-sm font-bold text-amber-700 ring-1 ring-amber-200">
+                  <Sunrise className="h-5 w-5" /> Morning delivery: 6 – 8 AM
+                </div>
+                <div className="inline-flex items-center gap-2 rounded-full bg-orange-50 px-5 py-2 text-sm font-bold text-orange-700 ring-1 ring-orange-200">
+                  <Sunset className="h-5 w-5" /> Evening delivery: 3 – 5 PM
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-x-8 gap-y-4 text-sm font-semibold sm:grid-cols-3">
+                {state.areas.map((a) => (
                   <div key={a.id} className="flex items-center gap-2 text-primary">
                     <MapPin className="h-4 w-4 opacity-50" /> {a.name}
                   </div>
                 ))}
               </div>
-              {/* ✅ Dynamic order cutoff time */}
-              <div className="mt-8 pt-6 border-t text-center space-y-3">
+              <div className="mt-8 space-y-3 border-t pt-6 text-center">
                 <p className="text-sm text-muted-foreground">
                   Order by <strong>{formatTime(routeCutoffTime)}</strong> for same-day free delivery on this route.
                 </p>
-                <div className="inline-flex items-center gap-2 bg-amber-50 text-amber-700 px-4 py-2 rounded-full text-xs font-bold ring-1 ring-amber-200">
+                <div className="inline-flex items-center gap-2 rounded-full bg-amber-50 px-4 py-2 text-xs font-bold text-amber-700 ring-1 ring-amber-200">
                   <Truck className="h-4 w-4" /> Personal delivery available for all other Chandigarh areas (Min ₹180)
                 </div>
               </div>
+            </Reveal>
+          </div>
+        </section>
+
+        {/* Our promise */}
+        <section className="bg-white/50 py-16 backdrop-blur-[2px]">
+          <div className="container mx-auto px-4">
+            <SectionTitle label="Our promise" title="Why Bengre Farm" />
+            <div className="mx-auto grid max-w-4xl gap-6 sm:grid-cols-3">
+              {points.map((p, i) => (
+                <Reveal key={p.title} delay={i * 150}>
+                  <div className="rounded-2xl border border-white bg-white/90 p-6 text-center shadow-sm transition-all duration-300 hover:-translate-y-2 hover:shadow-lg">
+                    <div className={`bf-float mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full border ${p.color}`} style={{ animationDelay: `${i * 0.6}s` }}>
+                      {p.icon}
+                    </div>
+                    <h3 className="font-display text-xl font-bold text-stone-800">{p.title}</h3>
+                    <p className="mt-1 text-sm text-stone-500">{p.desc}</p>
+                  </div>
+                </Reveal>
+              ))}
             </div>
           </div>
         </section>
 
         {/* Footer */}
-        <footer className="py-12 bg-card/80 border-t">
+        <footer className="border-t bg-white/80 py-12 backdrop-blur">
           <div className="container mx-auto px-4">
-            <div className="grid gap-8 md:grid-cols-3 items-start">
+            <div className="grid items-start gap-8 md:grid-cols-3">
               <div className="space-y-4">
                 <div className="flex items-center gap-3">
                   <Logo className="h-12 w-12" />
                   <div>
-                    <h3 className="font-display font-bold text-xl text-primary">Bengre Farm</h3>
-                    <p className="text-[10px] text-muted-foreground tracking-widest uppercase">Vibes of Village</p>
+                    <h3 className="font-display text-xl font-bold text-primary">Bengre Farm</h3>
+                    <p className="text-[10px] uppercase tracking-widest text-muted-foreground">Vibes of Village</p>
                   </div>
                 </div>
-                <p className="text-xs text-muted-foreground leading-relaxed max-w-xs">
-                  We bring the pure, unadulterated taste of the village to your city home.
-                  Freshness you can trust, quality you can taste.
+                <p className="max-w-xs text-xs leading-relaxed text-muted-foreground">
+                  We bring the pure, unadulterated taste of the village to your city home. Freshness you can trust, quality you can taste.
                 </p>
-                <div className="pt-2">
-                  <Badge variant="outline" className="text-[10px] border-primary/20 text-primary/60">
-                    FSSAI No. 30250711120704466
-                  </Badge>
-                </div>
+                <Badge variant="outline" className="border-primary/20 text-[10px] text-primary/60">
+                  FSSAI No. 30250711120704466
+                </Badge>
               </div>
 
               <div className="space-y-4">
-                <h4 className="font-display font-bold text-lg">Contact Us</h4>
+                <h4 className="font-display text-lg font-bold">Contact Us</h4>
                 <div className="space-y-3">
                   <div className="flex items-start gap-3 text-sm text-muted-foreground">
-                    <MapPin className="h-5 w-5 text-primary shrink-0" />
+                    <MapPin className="h-5 w-5 shrink-0 text-primary" />
                     <span>Shop no.3, Residence Complex,<br />Panjab University, Chandigarh</span>
                   </div>
-                  <div className="flex items-center gap-3 text-sm text-muted-foreground">
-                    <MessageCircle className="h-5 w-5 text-emerald-600 shrink-0" />
-                    <span className="font-semibold">98886 06082 (WhatsApp)</span>
-                  </div>
+                  <a href={PHONE_TEL} className="flex items-center gap-3 text-sm text-muted-foreground transition-colors hover:text-primary">
+                    <Phone className="h-5 w-5 shrink-0 text-primary" />
+                    <span className="font-semibold">{PHONE_DISPLAY} (tap to call)</span>
+                  </a>
+                  <a
+                    href={PHONE_WA}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 rounded-full bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-700 ring-1 ring-emerald-200 transition-colors hover:bg-emerald-100"
+                  >
+                    <MessageCircle className="h-5 w-5" /> Chat on WhatsApp
+                  </a>
                 </div>
               </div>
 
               <div className="space-y-4">
-                <h4 className="font-display font-bold text-lg">Quick Links</h4>
+                <h4 className="font-display text-lg font-bold">Quick Links</h4>
                 <div className="flex flex-col gap-2 text-sm text-muted-foreground">
-                  <Button variant="link" className="p-0 h-auto text-muted-foreground hover:text-primary justify-start" onClick={() => navigate({ to: "/login" })}>Customer Login</Button>
-                  <Button variant="link" className="p-0 h-auto text-muted-foreground hover:text-primary justify-start" onClick={() => navigate({ to: "/signup" })}>Create Account</Button>
-                  <Button variant="link" className="p-0 h-auto text-muted-foreground hover:text-primary justify-start" onClick={() => navigate({ to: "/shop" })}>View Menu</Button>
+                  <Button variant="link" className="h-auto justify-start p-0 text-muted-foreground hover:text-primary" onClick={() => navigate({ to: "/login" })}>Customer Login</Button>
+                  <Button variant="link" className="h-auto justify-start p-0 text-muted-foreground hover:text-primary" onClick={() => navigate({ to: "/signup" })}>Create Account</Button>
+                  <Button variant="link" className="h-auto justify-start p-0 text-muted-foreground hover:text-primary" onClick={() => navigate({ to: "/shop" })}>View Menu</Button>
                 </div>
               </div>
             </div>
-            <div className="mt-12 pt-8 border-t text-center text-[10px] text-muted-foreground">
+            <div className="mt-12 border-t pt-8 text-center text-[10px] text-muted-foreground">
               <p>© {new Date().getFullYear()} Bengre Farm™ — All Rights Reserved.</p>
               <p className="mt-1 font-medium">Naturally Sourced • Traditionally Crafted • Freshly Delivered</p>
             </div>
@@ -236,17 +481,5 @@ function HomePage() {
         </footer>
       </main>
     </div>
-  );
-}
-
-function FeatureCard({ icon, title, desc, color }: { icon: React.ReactNode; title: string; desc: string; color: string }) {
-  return (
-    <Card className="hover:shadow-warm transition-all duration-300 hover:-translate-y-1">
-      <CardContent className="pt-5 pb-4">
-        <div className={`${color} mb-3`}>{icon}</div>
-        <div className="font-semibold text-sm">{title}</div>
-        <div className="text-xs text-muted-foreground mt-1">{desc}</div>
-      </CardContent>
-    </Card>
   );
 }

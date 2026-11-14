@@ -219,6 +219,42 @@ app.post("/api/auth/signup", async (req, res) => {
   }
 });
 
+// Forgot password: customer accounts only. The email AND the phone number saved
+// at signup must both match before the password can be changed.
+const resetAttempts = new Map();
+
+app.post("/api/auth/reset-password", async (req, res) => {
+  try {
+    const { email, phone, newPassword } = req.body;
+    if (!email || !phone || !newPassword)
+      return res.status(400).json({ ok: false, error: "Email, registered phone number and new password are required" });
+    if (String(newPassword).length < 6)
+      return res.status(400).json({ ok: false, error: "Password must be at least 6 characters" });
+
+    // Basic brute-force protection: 5 attempts per email per 15 minutes
+    const key = String(email).toLowerCase().trim();
+    const now = Date.now();
+    const recent = (resetAttempts.get(key) || []).filter((t) => now - t < 15 * 60 * 1000);
+    if (recent.length >= 5)
+      return res.status(429).json({ ok: false, error: "Too many attempts. Please try again after 15 minutes." });
+    recent.push(now);
+    resetAttempts.set(key, recent);
+
+    const last10 = (s) => String(s).replace(/\D/g, "").slice(-10);
+    const user = await User.findOne({ email: key, role: 'user' });
+    if (!user || last10(phone).length < 10 || last10(user.phone) !== last10(phone))
+      return res.status(400).json({ ok: false, error: "Email and phone number do not match our records" });
+
+    user.password = newPassword;
+    await user.save();
+    resetAttempts.delete(key);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("Reset password error:", err);
+    res.status(500).json({ ok: false, error: "Could not reset password. Please try again." });
+  }
+});
+
 // ── Health Check ───────────────────────────────────────────────────────────
 
 app.get("/api/health", async (_req, res) => {
