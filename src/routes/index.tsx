@@ -48,21 +48,14 @@ const deliveryProducts: Product[] = [
   },
   {
     name: "Shakkar",
-    emoji: "🍬",
+    img: "/products/shakkar.svg",
     tint: "bg-yellow-50",
     soon: true,
     points: ["Unrefined desi shakkar", "No bleaching", "Natural, mellow sweetness", "Perfect for chai & milk"],
   },
   {
-    name: "Desi Ghee",
-    img: "/products/cow-ghee.jpg",
-    tint: "bg-yellow-50",
-    soon: true,
-    points: ["Traditional slow-cooked ghee", "Rich aroma & golden colour", "No added flavour", "Pure & unadulterated"],
-  },
-  {
     name: "Atta Biscuits",
-    emoji: "🍪",
+    img: "/products/biscuits.svg",
     tint: "bg-amber-100",
     soon: true,
     points: ["Made with whole wheat atta", "No maida", "No artificial colour", "Crunchy, home-style taste"],
@@ -74,10 +67,10 @@ const storeProducts: Product[] = [
   { name: "Lassi", img: "/products/lassi.jpg", tint: "bg-rose-50", points: ["Bilona-style thick lassi", "Cool & refreshing", "Made from fresh curd"] },
   { name: "Ghee", img: "/products/buffalo-ghee.jpg", tint: "bg-yellow-50", points: ["Rich in aroma & taste", "Made from pure milk fat", "No added flavour"] },
   { name: "Gud", emoji: "🍯", tint: "bg-orange-100", points: ["Traditional jaggery", "No added colour", "Rich, earthy sweetness"] },
-  { name: "Shakkar", emoji: "🍬", tint: "bg-yellow-50", points: ["Unrefined desi shakkar", "No bleaching", "Natural sweetness"] },
+  { name: "Shakkar", img: "/products/shakkar.svg", tint: "bg-yellow-50", points: ["Unrefined desi shakkar", "No bleaching", "Natural sweetness"] },
   { name: "Paneer", img: "/products/paneer.jpg", tint: "bg-amber-50", points: ["No soda, no milk powder", "Made from pure milk", "Soft & fresh"] },
   { name: "Desi Ghee", img: "/products/cow-ghee.jpg", tint: "bg-yellow-50", points: ["Bilona-style ghee", "Golden colour & rich aroma", "Pure & unadulterated"] },
-  { name: "Biscuits", emoji: "🍪", tint: "bg-amber-100", points: ["Whole wheat atta", "No maida", "Crunchy home-style taste"] },
+  { name: "Biscuits", img: "/products/biscuits.svg", tint: "bg-amber-100", points: ["Whole wheat atta", "No maida", "Crunchy home-style taste"] },
   { name: "White Makhan", img: "/products/makhan.jpg", tint: "bg-stone-50", points: ["Fresh, hand-pressed", "Soft & creamy", "No preservatives"] },
 ];
 
@@ -198,14 +191,9 @@ function SectionTitle({ label, title, sub }: { label: string; title: string; sub
   );
 }
 
-/* Two cupped hands — the Bengre Farm emblem (hands only) */
+/* The Bengre Farm handshake logo */
 function HandsLogo({ className = "" }: { className?: string }) {
-  return (
-    <svg viewBox="24 86 112 48" className={className} role="img" aria-label="Bengre Farm hands logo">
-      <path d="M28 98 C32 118 54 130 80 128 C80 121 78 114 74 110 C58 110 45 103 39 91 C34 91 30 93 28 98 Z" fill="#f6d2ae" stroke="#cf9a6b" strokeWidth="2.5" strokeLinejoin="round" />
-      <path d="M132 98 C128 118 106 130 80 128 C80 121 82 114 86 110 C102 110 115 103 121 91 C126 91 130 93 132 98 Z" fill="#f6d2ae" stroke="#cf9a6b" strokeWidth="2.5" strokeLinejoin="round" />
-    </svg>
-  );
+  return <img src="/handshake-logo.svg" alt="Bengre Farm logo" className={className} />;
 }
 
 function Cow({ x, y, s = 1, flip = false, delay = 0 }: { x: number; y: number; s?: number; flip?: boolean; delay?: number }) {
@@ -299,7 +287,7 @@ function HomePage() {
         {/* Hero */}
         <section className="border-b border-white/60 bg-white/40 backdrop-blur-[2px]">
           <div className="container mx-auto flex flex-col items-center px-4 py-14 text-center lg:py-20 animate-in fade-in slide-in-from-bottom-4 duration-700">
-            <HandsLogo className="bf-float h-auto w-36 drop-shadow-md lg:w-44" />
+            <HandsLogo className="bf-float h-auto w-48 drop-shadow-md lg:w-64" />
             <h1 className="mt-4 font-display text-5xl font-bold leading-tight text-primary lg:text-7xl">Bengre Farm</h1>
             <div className="mx-auto mt-3 h-1 w-20 rounded-full bg-emerald-300" />
             <p className="mt-4 text-[11px] uppercase tracking-[0.25em] text-muted-foreground lg:text-sm lg:tracking-[0.3em]">
@@ -391,7 +379,7 @@ function HomePage() {
             <div className="grid items-start gap-8 md:grid-cols-3">
               <div className="space-y-4">
                 <div className="flex items-center gap-3">
-                  <HandsLogo className="h-auto w-16" />
+                  <HandsLogo className="h-auto w-24" />
                   <div>
                     <h3 className="font-display text-xl font-bold text-primary">Bengre Farm</h3>
                     <p className="text-[10px] uppercase tracking-widest text-muted-foreground">Vibes of Village</p>

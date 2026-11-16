@@ -3,6 +3,7 @@ import express from "express";
 import cors from "cors";
 import mongoose from "mongoose";
 import Razorpay from "razorpay";
+import { randomBytes } from "crypto";
 
 const app = express();
 
@@ -88,6 +89,33 @@ const orderSchema = new mongoose.Schema({
 const Order = (() => {
   try { return mongoose.model('Order'); } catch { return mongoose.model('Order', orderSchema); }
 })();
+
+// ── Delivery slot rules (all times in India / IST) ─────────────────────────────────────
+
+const istNow = () => {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", hour12: false,
+  }).formatToParts(new Date());
+  const g = (t) => parts.find((p) => p.type === t).value;
+  return {
+    dateKey: `${g("year")}-${g("month")}-${g("day")}`,
+    minutes: (Number(g("hour")) % 24) * 60 + Number(g("minute")),
+  };
+};
+
+// morning (6-8 AM): order until 11:59 PM the night before
+// evening (4-6 PM): order until 3:00 PM on the delivery day
+function slotAvailability(slot, deliveryDate) {
+  const now = istNow();
+  if (deliveryDate < now.dateKey) return { ok: false, reason: "This delivery date has already passed" };
+  if (slot === "morning") {
+    if (deliveryDate <= now.dateKey) return { ok: false, reason: "Morning orders close at 11:59 PM the night before" };
+    return { ok: true };
+  }
+  if (deliveryDate === now.dateKey && now.minutes >= 15 * 60) return { ok: false, reason: "Evening orders for today closed at 3:00 PM" };
+  return { ok: true };
+}
 
 // ── DB Connection ──────────────────────────────────────────────────────────
 
@@ -216,6 +244,50 @@ app.post("/api/auth/signup", async (req, res) => {
   } catch (err) {
     console.error("Signup error:", err);
     res.status(500).json({ ok: false, error: "Signup failed. Please try again." });
+  }
+});
+
+// Continue with Google. The Google ID token is verified with Google, then the account is
+// found (log in) or created (sign up; phone + address are collected on the second call).
+app.post("/api/auth/google", async (req, res) => {
+  try {
+    const { credential, phone, address } = req.body;
+    const clientId = process.env.GOOGLE_CLIENT_ID || process.env.VITE_GOOGLE_CLIENT_ID;
+    if (!clientId)
+      return res.status(500).json({ ok: false, error: "Google sign-in is not set up yet" });
+    if (!credential)
+      return res.status(400).json({ ok: false, error: "Missing Google credential" });
+
+    const gRes = await fetch("https://oauth2.googleapis.com/tokeninfo?id_token=" + encodeURIComponent(credential));
+    const info = await gRes.json();
+    const verified = info.email_verified === true || info.email_verified === "true";
+    if (!gRes.ok || info.aud !== clientId || !verified || !info.email)
+      return res.status(401).json({ ok: false, error: "Google sign-in could not be verified" });
+
+    const email = String(info.email).toLowerCase().trim();
+    const name = info.name || email.split("@")[0];
+    let user = await User.findOne({ email });
+
+    if (user) {
+      if (user.role !== 'user')
+        return res.status(403).json({ ok: false, error: "Please log in with your email and password" });
+    } else {
+      if (!phone || !address)
+        return res.json({ ok: false, needsProfile: true, profile: { name, email } });
+      if (String(phone).replace(/\D/g, "").length < 10)
+        return res.status(400).json({ ok: false, error: "Please enter a valid 10-digit phone number" });
+      user = await User.create({
+        id: `u_${Date.now()}`, name, email,
+        password: randomBytes(24).toString("hex"), // Google users never type a password
+        role: 'user', address, phone
+      });
+    }
+
+    const { password: _pw, __v, _id, ...userData } = user.toObject();
+    res.json({ ok: true, user: userData });
+  } catch (err) {
+    console.error("Google auth error:", err);
+    res.status(500).json({ ok: false, error: "Google sign-in failed. Please try again." });
   }
 });
 
@@ -379,6 +451,13 @@ app.post("/api/orders", async (req, res) => {
       deliveryAreaId, deliveryAreaName, deliveryType, dateKey
     } = req.body;
 
+    // Delivery slot + date (dateKey is the DELIVERY date) — enforced here as well as in the app
+    if (!["morning", "evening"].includes(deliveryType) || !/^\d{4}-\d{2}-\d{2}$/.test(dateKey || ""))
+      return res.status(400).json({ ok: false, error: "Please choose a delivery date and time slot" });
+    const avail = slotAvailability(deliveryType, dateKey);
+    if (!avail.ok)
+      return res.status(400).json({ ok: false, error: avail.reason });
+
     // Check and decrement stock atomically for each item
     for (const item of items) {
       const updatedProduct = await Product.findOneAndUpdate(
@@ -462,7 +541,7 @@ app.post("/api/create-order", async (req, res) => {
   }
 });
 
-// ── Start (local only) ─────────────────────────────────────────────────────
+// ── Start (local only) ─────────────────────────────────────────────────────────
 
 const PORT = process.env.PORT || 3001;
 if (process.env.NODE_ENV !== 'production') {
